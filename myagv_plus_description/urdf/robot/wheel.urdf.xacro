@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- wheel defining macro -->
-  <xacro:macro name="wheel" params="side wheel_radius namespace">
+  <xacro:macro name="wheel" params="side wheel_radius">
     
     <xacro:property name="wheel_separation_x" value="0.106" />
     <xacro:property name="wheel_separation_y" value="0.192" />
@@ -12,11 +12,11 @@
     <xacro:property name="iyy" value="0.000067" />
     <xacro:property name="izz" value="0.000041" />
 
-    <xacro:property name="x" value="0.0" />
+    <!-- <xacro:property name="x" value="0.0" />
     <xacro:property name="y" value="0.0" />
     <xacro:property name="mesh" value="" />
     <xacro:property name="visual_rotation" value="0.0" />
-    <xacro:property name="fdir" value="1.0 0.0 0.0" />
+    <xacro:property name="fdir" value="1.0 0.0 0.0" /> -->
     
     <xacro:if value="${side == 'lf'}">
       <xacro:property name="x" value="${wheel_separation_x/2.0}" />
@@ -47,19 +47,19 @@
       <xacro:property name="fdir" value="1.0 -1.0 0.0" />
     </xacro:if>
 
-    <joint name="${namespace}${side}_wheel_joint" type="continuous">
-      <parent link="${namespace}base_link" />
-      <child link="${namespace}${side}_wheel_link" />
+    <joint name="${side}_wheel_joint" type="continuous">
+      <parent link="base_link" />
+      <child link="${side}_wheel_link" />
       <origin xyz="${x} ${y} 0.0" rpy="0.0 0.0 0.0" />
       <axis xyz="0.0 1.0 0.0" />
       <limit effort="1.5" velocity="24.0" />
       <dynamics damping="0.001" friction="0.001" />
     </joint>
 
-    <link name="${namespace}${side}_wheel_link">
+    <link name="${side}_wheel_link">
       <visual>
         <geometry>
-          <mesh filename="${mesh}" scale="1.0 1.0 1.0" />
+          <mesh filename="${mesh}" />
         </geometry>
         <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 ${visual_rotation}" />
         <material name="">
@@ -69,7 +69,7 @@
 
       <collision>
         <geometry>
-          <cylinder radius="${wheel_radius}" length="${wheel_thickness}" />
+          <mesh filename="${mesh}" />
         </geometry>
         <origin xyz="0.0 0.0 0.0" rpy="${pi/2} 0.0 0.0" />
       </collision>
@@ -82,7 +82,7 @@
       </inertial>
     </link>
 
-    <gazebo reference="${namespace}${side}_wheel_link" xmlns:ignition="http://ignitionrobotics.org/schema">
+    <gazebo reference="${side}_wheel_link" xmlns:ignition="http://ignitionrobotics.org/schema">
       <collision>
         <surface>
           <friction>

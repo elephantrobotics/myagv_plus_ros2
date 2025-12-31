@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- base defining macro -->
+  <xacro:macro name="base" params="wheel_radius namespace">
+    
+    <link name="${namespace}base_footprint"/>
+
+  <joint name="${namespace}base_joint" type="fixed">
+    <parent link="${namespace}base_footprint"/>
+    <child link="${namespace}base_link" />
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>    
+
+  
+  </xacro:macro>
+
+</robot>
