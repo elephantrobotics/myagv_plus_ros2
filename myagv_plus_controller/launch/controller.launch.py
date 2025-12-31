@@ -40,9 +40,9 @@ def generate_launch_description():
 
     robot_controllers = PathJoinSubstitution(
         [
-            FindPackageShare("ros2_control_demo_example_2"),
+            FindPackageShare("myagv_plus_controller"),
             "config",
-            "diffbot_controllers.yaml",
+            "controllers.yaml",
         ]
     )
     rviz_config_file = PathJoinSubstitution(
@@ -56,15 +56,22 @@ def generate_launch_description():
         output="both",
         remappings=[
             ("~/robot_description", "/robot_description"),
-            ("/myagv_plus_controller/cmd_vel", "/cmd_vel"),
+            ("mecanum_drive_controller/cmd_vel", "cmd_vel"),
+            ("mecanum_drive_controller/odom", "odometry/wheels"),
+            (
+                "mecanum_drive_controller/transition_event",
+                "_mecanum_drive_controller/transition_event",
+            ),    
         ],
     )
+
     robot_state_pub_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
         parameters=[robot_description],
     )
+
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -102,12 +109,13 @@ def generate_launch_description():
         )
     )
 
-    nodes = [
-        control_node,
-        robot_state_pub_node,
-        joint_state_broadcaster_spawner,
-        delay_rviz_after_joint_state_broadcaster_spawner,
-        delay_robot_controller_spawner_after_joint_state_broadcaster_spawner,
-    ]
-
-    return LaunchDescription(declared_arguments + nodes)
+    return LaunchDescription(
+        [
+            declared_arguments,
+            control_node,
+            robot_state_pub_node,
+            joint_state_broadcaster_spawner,
+            delay_rviz_after_joint_state_broadcaster_spawner,
+            delay_robot_controller_spawner_after_joint_state_broadcaster_spawner,
+        ]
+    )

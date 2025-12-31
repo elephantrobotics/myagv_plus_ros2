@@ -18,14 +18,13 @@
   <xacro:base.body wheel_radius="${wheel_radius}" namespace="${namespace}" />
 
   <!-- WHEEL -->
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="lf" mecanum="${mecanum}" />
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="lb" mecanum="${mecanum}" />
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rf" mecanum="${mecanum}" />
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rb" mecanum="${mecanum}" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="fl" mecanum="${mecanum}" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rl" mecanum="${mecanum}" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="fr" mecanum="${mecanum}" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rr" mecanum="${mecanum}" />
 
   <!-- HARDWARE PLUGINS -->
   <xacro:unless value="${use_sim}">
-    <xacro:ros2_control.imu namespace="${namespace}" />
     <xacro:ros2_control.rosbot_system namespace="${namespace}" />
   </xacro:unless>
 

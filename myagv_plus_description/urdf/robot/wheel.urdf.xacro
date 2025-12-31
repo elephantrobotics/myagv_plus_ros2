@@ -12,37 +12,31 @@
     <xacro:property name="iyy" value="0.000067" />
     <xacro:property name="izz" value="0.000041" />
 
-    <!-- <xacro:property name="x" value="0.0" />
-    <xacro:property name="y" value="0.0" />
-    <xacro:property name="mesh" value="" />
-    <xacro:property name="visual_rotation" value="0.0" />
-    <xacro:property name="fdir" value="1.0 0.0 0.0" /> -->
-    
-    <xacro:if value="${side == 'lf'}">
+    <xacro:if value="${side == 'fl'}">
       <xacro:property name="x" value="${wheel_separation_x/2.0}" />
       <xacro:property name="y" value="${wheel_separation_y/2.0}" />
-      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_lf_link.stl" />
+      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_fl_link.stl" />
       <xacro:property name="visual_rotation" value="${pi}" />
       <xacro:property name="fdir" value="1.0 -1.0 0.0" />
     </xacro:if>
-    <xacro:if value="${side == 'rf'}">
+    <xacro:if value="${side == 'fr'}">
       <xacro:property name="x" value="${wheel_separation_x/2.0}" />
       <xacro:property name="y" value="${-wheel_separation_y/2.0}" />
-      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_rf_link.stl" />
+      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_fr_link.stl" />
       <xacro:property name="visual_rotation" value="${pi}" />
       <xacro:property name="fdir" value="1.0 1.0 0.0" />
     </xacro:if>
-    <xacro:if value="${side == 'lb'}">
+    <xacro:if value="${side == 'rl'}">
       <xacro:property name="x" value="${-wheel_separation_x/2.0}" />
       <xacro:property name="y" value="${wheel_separation_y/2.0}" />
-      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_lb_link.stl" />
+      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_rl_link.stl" />
       <xacro:property name="visual_rotation" value="${0.0}" />
       <xacro:property name="fdir" value="1.0 1.0 0.0" />
     </xacro:if>
-    <xacro:if value="${side == 'rb'}">
+    <xacro:if value="${side == 'rr'}">
       <xacro:property name="x" value="${-wheel_separation_x/2.0}" />
       <xacro:property name="y" value="${-wheel_separation_y/2.0}" />
-      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_rb_link.stl" />
+      <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_rr_link.stl" />
       <xacro:property name="visual_rotation" value="${0.0}" />
       <xacro:property name="fdir" value="1.0 -1.0 0.0" />
     </xacro:if>
