@@ -57,6 +57,8 @@ private:
   std::string port_;
   int baudrate_{0};
   std::vector<MotorDesc> motors_;
+
+  std::shared_ptr<SerialPort> serial_;
   std::shared_ptr<damiao::Motor_Control> motor_ctrl_;
 
   // Position state storage for all joints

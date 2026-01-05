@@ -34,7 +34,7 @@ CallbackReturn MyAGVPlusInterface::on_init(const hardware_interface::HardwareInf
     motor.can_id = std::stoi(joint.parameters.at("can_id"), nullptr, 0);
     motor.mst_id = std::stoi(joint.parameters.at("mst_id"), nullptr, 0);
 
-    motors_.push_back(motor);
+    motors_.emplace_back(std::move(motor));
 
     RCLCPP_INFO(
       rclcpp::get_logger("MyAGVPlusInterface"),
@@ -99,7 +99,9 @@ CallbackReturn MyAGVPlusInterface::on_configure(const rclcpp_lifecycle::State& p
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Configuring MyAGVPlus hardware interface...");
   try {
-    motor_ctrl_ = std::make_shared<damiao::Motor_Control>(port_, baudrate_);
+    serial_ = std::make_shared<SerialPort>(port_, baudrate_);
+
+    motor_ctrl_ = std::make_shared<damiao::Motor_Control>(serial_);
   }
   catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("MyAGVPlusInterface"), "Failed to create Motor_Control: %s", e.what());
@@ -118,7 +120,11 @@ CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State& pr
   std::fill(velocity_commands_.begin(), velocity_commands_.end(), 0.0);
 
   for (auto & m : motors_) {
-    m.motor = std::make_unique<damiao::Motor>(m.can_id, m.mst_id, motor_ctrl_.get());
+    m.motor = std::make_unique<damiao::Motor>(
+      damiao::DM_Motor_Type::DM4310,  
+      m.can_id,
+      m.mst_id);
+
     motor_ctrl_->enable(*m.motor);
     motor_ctrl_->set_zero_position(*m.motor);
   }

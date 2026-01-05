@@ -2,10 +2,10 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>myagv_plus_description</name>
-  <version>0.0.0</version>
+  <version>0.1.0</version>
   <description>TODO: Package description</description>
   <maintainer email="weijun.xie@elephantrobotics.com">lanni</maintainer>
-  <license>TODO: License declaration</license>
+  <license>BSD-3-Clause license</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

@@ -4,6 +4,9 @@
   <xacro:arg name="controller_config" default="" />
   <xacro:arg name="namespace" default=""/>
   <xacro:arg name="use_sim" default="false" />
+  
+  <xacro:property name="namespace" value="$(arg namespace)" />
+  <xacro:property name="use_sim" value="$(arg use_sim)" />
 
   <!-- PROPERTIES -->
   <xacro:property name="wheel_radius" value="0.04"/>
@@ -14,14 +17,14 @@
   <xacro:include filename="$(find myagv_plus_description)/urdf/robot/base.urdf.xacro" ns="base" />
   <xacro:include filename="$(find myagv_plus_description)/urdf/robot/wheel.urdf.xacro" ns="wheel" />
 
-  <!-- BODY -->
-  <xacro:base.body wheel_radius="${wheel_radius}" namespace="${namespace}" />
+  <!-- BASE -->
+  <xacro:base.base wheel_radius="${wheel_radius}" />
 
   <!-- WHEEL -->
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="fl" mecanum="${mecanum}" />
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rl" mecanum="${mecanum}" />
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="fr" mecanum="${mecanum}" />
-  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rr" mecanum="${mecanum}" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="fl" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rl" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="fr" />
+  <xacro:wheel.wheel wheel_radius="${wheel_radius}" side="rr" />
 
   <!-- HARDWARE PLUGINS -->
   <xacro:unless value="${use_sim}">

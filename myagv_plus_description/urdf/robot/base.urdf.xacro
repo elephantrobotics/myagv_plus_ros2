@@ -69,8 +69,15 @@
                                               izz="0.0001" />
         <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0" />
       </inertial>
+    </link>
 
-    <link name="imu_link">
+    <joint name="$lidar_joint" type="fixed">
+      <origin xyz="0.17891 0 0.20928" rpy="0 0 0" />
+      <parent link="base_link" />
+      <child link="laser_link" />
+  </joint>
+
+    <link name="imu_link" />
 
     <joint name="imu_joint" type="fixed">
       <origin xyz="-0.17181 -0.0270532 0.14928" rpy="0 0 1.5707" />
@@ -78,7 +85,7 @@
       <child link="imu_link" />
     </joint>
 
-    <link name="camera_link">
+    <link name="camera_link" />
 
     <joint name="camera_joint" type="fixed">
       <origin xyz="0.23191 0 0.14928" rpy="0 0 0" />

@@ -19,8 +19,25 @@ def generate_launch_description():
         )
     )
 
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "use_mock_hardware",
+            default_value="false",
+            description="Use mock hardware",
+        )
+    )
+
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "use_sim",
+            default_value="false",
+            description="Whether to run in simulation (Gazebo)",
+        )
+    )
+
     # Initialize Arguments
     gui = LaunchConfiguration("gui")
+    use_sim = LaunchConfiguration("use_sim")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
 
     # Get URDF via xacro
@@ -32,8 +49,8 @@ def generate_launch_description():
                 [FindPackageShare("myagv_plus_description"), "urdf", "myagv_plus.urdf.xacro"]
             ),
             " ",
-            "use_mock_hardware:=",
-            use_mock_hardware,
+            "use_sim:=",
+            use_sim
         ]
     )
     robot_description = {"robot_description": robot_description_content}
@@ -44,9 +61,6 @@ def generate_launch_description():
             "config",
             "controllers.yaml",
         ]
-    )
-    rviz_config_file = PathJoinSubstitution(
-        [FindPackageShare("myagv_plus_description"), "rviz", "myagv_plus.rviz"]
     )
 
     control_node = Node(
@@ -72,15 +86,6 @@ def generate_launch_description():
         parameters=[robot_description],
     )
 
-    rviz_node = Node(
-        package="rviz2",
-        executable="rviz2",
-        name="rviz2",
-        output="log",
-        arguments=["-d", rviz_config_file],
-        condition=IfCondition(gui),
-    )
-
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -93,13 +98,6 @@ def generate_launch_description():
         arguments=["controller", "--controller-manager", "/controller_manager"],
     )
 
-    # Delay rviz start after `joint_state_broadcaster`
-    delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=joint_state_broadcaster_spawner,
-            on_exit=[rviz_node],
-        )
-    )
 
     # Delay start of robot_controller after `joint_state_broadcaster`
     delay_robot_controller_spawner_after_joint_state_broadcaster_spawner = RegisterEventHandler(
@@ -111,11 +109,10 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            declared_arguments,
+            *declared_arguments,
             control_node,
             robot_state_pub_node,
             joint_state_broadcaster_spawner,
-            delay_rviz_after_joint_state_broadcaster_spawner,
             delay_robot_controller_spawner_after_joint_state_broadcaster_spawner,
         ]
     )

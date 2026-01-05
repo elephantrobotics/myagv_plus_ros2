@@ -1,0 +1,10 @@
+<library path="myagv_plus_hardware_interfaces">
+  <class
+    name="myagvplus_hardware_interfaces/MyAGVPlusInterface"
+    type="myagvplus_hardware_interfaces::MyAGVPlusInterface"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>
+      MyAGV Plus hardware interface
+    </description>
+  </class>
+</library>
