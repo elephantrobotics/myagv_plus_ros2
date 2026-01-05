@@ -1,6 +1,12 @@
 #ifndef MYAGVPLUS_INTERFACE_H
 #define MYAGVPLUS_INTERFACE_H
 
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "myagv_plus_hardware_interfaces/damiao.hpp"
+
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <rclcpp_lifecycle/state.hpp>
@@ -14,7 +20,16 @@
 
 namespace myagvplus_hardware_interfaces
 {
-    using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+struct MotorDesc
+{
+  std::string joint_name;
+  uint32_t can_id;   // Slave ID
+  uint32_t mst_id;   // Master ID
+  std::unique_ptr<damiao::Motor> motor;
+};
 
 class MyAGVPlusInterface : public hardware_interface::SystemInterface
 {
@@ -38,6 +53,12 @@ public:
     hardware_interface::return_type write(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
+
+  std::string port_;
+  int baudrate_{0};
+  std::vector<MotorDesc> motors_;
+  std::shared_ptr<damiao::Motor_Control> motor_ctrl_;
+
   // Position state storage for all joints
   std::vector<double> position_states_;
 

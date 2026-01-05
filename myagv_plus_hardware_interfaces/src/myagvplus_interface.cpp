@@ -19,7 +19,31 @@ CallbackReturn MyAGVPlusInterface::on_init(const hardware_interface::HardwareInf
     return result;
   }
 
+  port_ = info_.hardware_parameters.at("port");
+  baudrate_ = std::stoi(info_.hardware_parameters.at("baudrate"));
+
+  RCLCPP_INFO(
+    rclcpp::get_logger("MyAGVPlusInterface"),
+    "Using port=%s baudrate=%d", port_.c_str(), baudrate_);
+
+  motors_.clear();
+  for (const auto & joint : info_.joints)
+  {
+    MotorDesc motor;
+    motor.joint_name = joint.name;
+    motor.can_id = std::stoi(joint.parameters.at("can_id"), nullptr, 0);
+    motor.mst_id = std::stoi(joint.parameters.at("mst_id"), nullptr, 0);
+
+    motors_.push_back(motor);
+
+    RCLCPP_INFO(
+      rclcpp::get_logger("MyAGVPlusInterface"),
+      "Joint %s -> CAN:0x%X MST:0x%X",
+      motor.joint_name.c_str(), motor.can_id, motor.mst_id);
+  }
+
   size_t num_joints = info_.joints.size();
+
   position_states_.resize(num_joints, 0.0);
   velocity_commands_.resize(num_joints, 0.0);
   velocity_states_.resize(num_joints, 0.0);
@@ -74,12 +98,31 @@ CallbackReturn MyAGVPlusInterface::on_init(const hardware_interface::HardwareInf
 CallbackReturn MyAGVPlusInterface::on_configure(const rclcpp_lifecycle::State& previous_state)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Configuring MyAGVPlus hardware interface...");
+  try {
+    motor_ctrl_ = std::make_shared<damiao::Motor_Control>(port_, baudrate_);
+  }
+  catch (const std::exception & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("MyAGVPlusInterface"), "Failed to create Motor_Control: %s", e.what());
+    return CallbackReturn::ERROR;
+  }
+  
   return CallbackReturn::SUCCESS;
 }
 
 CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Activating MyAGVPlus hardware interface...");
+  
+  std::fill(position_states_.begin(), position_states_.end(), 0.0);
+  std::fill(velocity_states_.begin(), velocity_states_.end(), 0.0);
+  std::fill(velocity_commands_.begin(), velocity_commands_.end(), 0.0);
+
+  for (auto & m : motors_) {
+    m.motor = std::make_unique<damiao::Motor>(m.can_id, m.mst_id, motor_ctrl_.get());
+    motor_ctrl_->enable(*m.motor);
+    motor_ctrl_->set_zero_position(*m.motor);
+  }
+  
   return CallbackReturn::SUCCESS;
 }
 
@@ -134,11 +177,24 @@ std::vector<hardware_interface::CommandInterface> MyAGVPlusInterface::export_com
 
 hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
+  for (size_t i = 0; i < motors_.size(); ++i)
+   {
+    auto & m = motors_[i];
+    motor_ctrl_->refresh_motor_status(*m.motor);
+    position_states_[i] = m.motor->Get_Position();
+    velocity_states_[i] = m.motor->Get_Velocity();
+   }
   return hardware_interface::return_type::OK;
 }
 
 hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
+  for (size_t i = 0; i < motors_.size(); ++i)
+   {
+    auto & m = motors_[i];
+    double cmd_vel = velocity_commands_[i];
+    motor_ctrl_->control_vel(*m.motor, cmd_vel);
+   }
   return hardware_interface::return_type::OK;
 }
 

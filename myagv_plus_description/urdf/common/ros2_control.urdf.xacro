@@ -6,33 +6,45 @@
 
     <ros2_control name="${ns}${name}" type="system">
       <hardware>
-        <plugin>rosbot_hardware_interfaces/RosbotSystem</plugin>
-        <param name="connection_timeout_ms">30000</param>
-        <param name="connection_check_period_ms">1000</param>
-        <param name="velocity_command_joint_order">
-          rb_wheel_joint, lb_wheel_joint, rf_wheel_joint, lf_wheel_joint
-        </param>
+        <plugin>myagvplus_hardware_interfaces/MyAGVPlusInterface</plugin>
+        <param name="port">/dev/ttyACM0</param>
+        <param name="baudrate">921600</param>
       </hardware>
 
-      <joint name="lf_wheel_joint">
+      <joint name="fl_wheel_joint">
         <command_interface name="velocity" />
         <state_interface name="position" />
         <state_interface name="velocity" />
+
+        <param name="can_id">0x01</param>
+        <param name="mst_id">0x11</param>
       </joint>
-      <joint name="rf_wheel_joint">
+
+      <joint name="fr_wheel_joint">
         <command_interface name="velocity" />
         <state_interface name="position" />
         <state_interface name="velocity" />
+
+        <param name="can_id">0x02</param>
+        <param name="mst_id">0x12</param>
       </joint>
-      <joint name="lb_wheel_joint">
+
+      <joint name="rl_wheel_joint">
         <command_interface name="velocity" />
         <state_interface name="position" />
         <state_interface name="velocity" />
+
+        <param name="can_id">0x03</param>
+        <param name="mst_id">0x13</param>
       </joint>
-      <joint name="rb_wheel_joint">
+      
+      <joint name="rr_wheel_joint">
         <command_interface name="velocity" />
         <state_interface name="position" />
         <state_interface name="velocity" />
+
+        <param name="can_id">0x04</param>
+        <param name="mst_id">0x14</param>
       </joint>
 
       <sensor name="${ns}imu">
