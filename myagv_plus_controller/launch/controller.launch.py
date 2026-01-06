@@ -1,31 +1,17 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
-from launch.conditions import IfCondition
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler,IncludeLaunchDescription
+from launch.conditions import IfCondition,UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration
 
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
 def generate_launch_description():
     # Declare arguments
     declared_arguments = []
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "gui",
-            default_value="true",
-            description="Start RViz2 automatically with this launch file.",
-        )
-    )
-
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "use_mock_hardware",
-            default_value="false",
-            description="Use mock hardware",
-        )
-    )
 
     declared_arguments.append(
         DeclareLaunchArgument(
@@ -36,24 +22,7 @@ def generate_launch_description():
     )
 
     # Initialize Arguments
-    gui = LaunchConfiguration("gui")
     use_sim = LaunchConfiguration("use_sim")
-    use_mock_hardware = LaunchConfiguration("use_mock_hardware")
-
-    # Get URDF via xacro
-    robot_description_content = Command(
-        [
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            PathJoinSubstitution(
-                [FindPackageShare("myagv_plus_description"), "urdf", "myagv_plus.urdf.xacro"]
-            ),
-            " ",
-            "use_sim:=",
-            use_sim
-        ]
-    )
-    robot_description = {"robot_description": robot_description_content}
 
     robot_controllers = PathJoinSubstitution(
         [
@@ -61,6 +30,35 @@ def generate_launch_description():
             "config",
             "controllers.yaml",
         ]
+    )
+
+    # Get URDF via xacro
+    robot_description_content = Command(
+        [
+            PathJoinSubstitution([FindExecutable(name="xacro")]),
+            " ",
+            PathJoinSubstitution([
+                FindPackageShare("myagv_plus_description"),
+                "urdf",
+                "myagv_plus.urdf.xacro"
+            ]),
+            " ",
+            "use_sim:=", use_sim,
+            " ",
+            "controller_config:=", robot_controllers,
+        ]
+    )
+    robot_description = {"robot_description": robot_description_content}
+
+    gz_sim = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare("ros_gz_sim"),
+                "launch",
+                "gz_sim.launch.py",
+            ])
+        ),
+        condition=IfCondition(use_sim),
     )
 
     control_node = Node(
@@ -77,6 +75,7 @@ def generate_launch_description():
                 "_mecanum_drive_controller/transition_event",
             ),    
         ],
+        condition=UnlessCondition(use_sim),
     )
 
     robot_state_pub_node = Node(
@@ -111,6 +110,7 @@ def generate_launch_description():
         [
             *declared_arguments,
             control_node,
+            gz_sim,
             robot_state_pub_node,
             joint_state_broadcaster_spawner,
             delay_robot_controller_spawner_after_joint_state_broadcaster_spawner,

@@ -5,6 +5,7 @@
   <xacro:arg name="namespace" default=""/>
   <xacro:arg name="use_sim" default="false" />
   
+  <xacro:property name="controller_config" value="$(arg controller_config)" />
   <xacro:property name="namespace" value="$(arg namespace)" />
   <xacro:property name="use_sim" value="$(arg use_sim)" />
 
