@@ -71,6 +71,7 @@ public:
 
   void recv(uint8_t* data, uint8_t head, ssize_t len)
   {
+    if (len <= 0) return;
     // 存入队列
     ssize_t recv_len = this->recv(recv_buf.data(), len);
     for (int i = 0; i < recv_len; i++)
@@ -78,8 +79,10 @@ public:
       recv_queue.push(recv_buf[i]);
     }
 
+    const size_t frame_len = static_cast<size_t>(len);
+
     // 查找帧头
-    while (recv_queue.size() >= len)
+    while (recv_queue.size() >= frame_len)
     {
       if(recv_queue.front() != head)
       {
@@ -89,10 +92,10 @@ public:
       break;
     }
 
-    if(recv_queue.size() < len) return;
+    if(recv_queue.size() < frame_len) return;
 
     // 读取数据
-    for(int i = 0; i < len; i++)
+    for (size_t i = 0; i < frame_len; i++)
     {
       data[i] = recv_queue.front();
       recv_queue.pop();
@@ -108,7 +111,6 @@ public:
 private:
   void Init(std::string port, speed_t baudrate)
   {
-    int ret;
     // Open serial port
     fd_ = open(port.c_str(), O_RDWR | O_NOCTTY);
     if (fd_ < 0)
@@ -120,7 +122,7 @@ private:
     // Set attributes
     struct termios option;
     memset(&option, 0, sizeof(option));
-    ret = tcgetattr(fd_, &option);
+    tcgetattr(fd_, &option);
 
     option.c_oflag = 0;
     option.c_lflag = 0;
@@ -139,8 +141,8 @@ private:
     option.c_cc[VMIN] = 0;
     option.c_lflag |= CBAUDEX;
 
-    ret = tcflush(fd_, TCIFLUSH);
-    ret = tcsetattr(fd_, TCSANOW, &option);
+    tcflush(fd_, TCIFLUSH);
+    tcsetattr(fd_, TCSANOW, &option);
   }
 
   int fd_;

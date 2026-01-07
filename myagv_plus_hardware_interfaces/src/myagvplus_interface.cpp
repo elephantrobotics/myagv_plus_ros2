@@ -95,7 +95,7 @@ CallbackReturn MyAGVPlusInterface::on_init(const hardware_interface::HardwareInf
   return CallbackReturn::SUCCESS;
 }
 
-CallbackReturn MyAGVPlusInterface::on_configure(const rclcpp_lifecycle::State& previous_state)
+CallbackReturn MyAGVPlusInterface::on_configure(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Configuring MyAGVPlus hardware interface...");
   try {
@@ -111,7 +111,7 @@ CallbackReturn MyAGVPlusInterface::on_configure(const rclcpp_lifecycle::State& p
   return CallbackReturn::SUCCESS;
 }
 
-CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State& previous_state)
+CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Activating MyAGVPlus hardware interface...");
   
@@ -135,25 +135,25 @@ CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State& pr
   return CallbackReturn::SUCCESS;
 }
 
-CallbackReturn MyAGVPlusInterface::on_deactivate(const rclcpp_lifecycle::State& previous_state)
+CallbackReturn MyAGVPlusInterface::on_deactivate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Deactivating MyAGVPlus hardware interface...");
   return CallbackReturn::SUCCESS;
 }
 
-CallbackReturn MyAGVPlusInterface::on_shutdown(const rclcpp_lifecycle::State& previous_state)
+CallbackReturn MyAGVPlusInterface::on_shutdown(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Shutting down MyAGVPlus hardware interface...");
   return CallbackReturn::SUCCESS;
 }
 
-CallbackReturn MyAGVPlusInterface::on_cleanup(const rclcpp_lifecycle::State& previous_state)
+CallbackReturn MyAGVPlusInterface::on_cleanup(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Cleaning up MyAGVPlus hardware interface...");
   return CallbackReturn::SUCCESS;
 }
 
-CallbackReturn MyAGVPlusInterface::on_error(const rclcpp_lifecycle::State& previous_state)
+CallbackReturn MyAGVPlusInterface::on_error(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusInterface"), "Error in MyAGVPlus hardware interface...");
   return CallbackReturn::SUCCESS;
@@ -184,7 +184,7 @@ std::vector<hardware_interface::CommandInterface> MyAGVPlusInterface::export_com
   return command_interfaces;
 }
 
-hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time& time, const rclcpp::Duration& period)
+hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
   for (size_t i = 0; i < motors_.size(); ++i)
    {
@@ -196,7 +196,7 @@ hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time& tim
   return hardware_interface::return_type::OK;
 }
 
-hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time& time, const rclcpp::Duration& period)
+hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
   for (size_t i = 0; i < motors_.size(); ++i)
    {
