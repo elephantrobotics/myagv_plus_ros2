@@ -125,6 +125,9 @@ CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State& pr
       m.can_id,
       m.mst_id);
 
+    motor_ctrl_->addMotor(m.motor.get());
+    motor_ctrl_->disable(*m.motor);
+    motor_ctrl_->switchControlMode(*m.motor, damiao::VEL_MODE);
     motor_ctrl_->enable(*m.motor);
     motor_ctrl_->set_zero_position(*m.motor);
   }

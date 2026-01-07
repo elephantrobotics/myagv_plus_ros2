@@ -94,7 +94,7 @@ def generate_launch_description():
     robot_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["controller", "--controller-manager", "/controller_manager"],
+        arguments=["mecanum_drive_controller", "--controller-manager", "/controller_manager"],
     )
 
 
