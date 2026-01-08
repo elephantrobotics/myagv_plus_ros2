@@ -196,14 +196,21 @@ hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time &, c
   return hardware_interface::return_type::OK;
 }
 
-hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time &, const rclcpp::Duration &)
+hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time &, const rclcpp::Duration & period)
 {
+  if (period < rclcpp::Duration::from_seconds(0.002)) {
+    return hardware_interface::return_type::OK;
+  }
+
+  // auto logger = rclcpp::get_logger("myagvplus_hardware");
+  // auto clock = rclcpp::Clock(RCL_STEADY_TIME);
+
   for (size_t i = 0; i < motors_.size(); ++i)
-   {
-    auto & m = motors_[i];
-    double cmd_vel = velocity_commands_[i];
-    motor_ctrl_->control_vel(*m.motor, cmd_vel);
-   }
+  {
+
+    motor_ctrl_->control_vel(*motors_[i].motor, velocity_commands_[i]);
+    // RCLCPP_INFO_THROTTLE(logger,clock,500,"Motor[%zu] cmd_vel = %.3f (rad/s)",i,velocity_commands_[i]);
+  }
   return hardware_interface::return_type::OK;
 }
 
