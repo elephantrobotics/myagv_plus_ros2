@@ -69,7 +69,8 @@ def generate_launch_description():
         remappings=[
             ("~/robot_description", "/robot_description"),
             ("mecanum_drive_controller/reference_unstamped", "/cmd_vel"),
-            ("mecanum_drive_controller/odom", "/odom"),   
+            ("mecanum_drive_controller/odometry", "/odom"),
+            ("mecanum_drive_controller/tf_odometry", "/tf"),
         ],
         condition=UnlessCondition(use_sim),
     )
