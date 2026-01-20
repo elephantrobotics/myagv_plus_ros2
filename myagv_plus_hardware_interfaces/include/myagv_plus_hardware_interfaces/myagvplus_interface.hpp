@@ -34,9 +34,6 @@ struct MotorDesc
 class MyAGVPlusInterface : public hardware_interface::SystemInterface
 {
 public:
-    MyAGVPlusInterface();
-    virtual ~MyAGVPlusInterface();
-    
     // LifecycleNodeInterface
     CallbackReturn on_init(const hardware_interface::HardwareInfo& hardware_info) override;
     CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;

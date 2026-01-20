@@ -3,14 +3,6 @@
 namespace myagvplus_hardware_interfaces
 {
 
-MyAGVPlusInterface::MyAGVPlusInterface()
-{
-}
-
-MyAGVPlusInterface::~MyAGVPlusInterface()
-{
-}
-
 CallbackReturn MyAGVPlusInterface::on_init(const hardware_interface::HardwareInfo& hardware_info)
 {
   CallbackReturn result = hardware_interface::SystemInterface::on_init(hardware_info);
@@ -131,7 +123,7 @@ CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State &)
     motor_ctrl_->enable(*m.motor);
     motor_ctrl_->set_zero_position(*m.motor);
   }
-  
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -186,30 +178,28 @@ std::vector<hardware_interface::CommandInterface> MyAGVPlusInterface::export_com
 
 hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
-  for (size_t i = 0; i < motors_.size(); ++i)
-   {
+  constexpr double VEL_DEADBAND = 0.01; // rad/s
+
+  for (size_t i = 0; i < motors_.size(); ++i){
     auto & m = motors_[i];
     motor_ctrl_->refresh_motor_status(*m.motor);
     position_states_[i] = m.motor->Get_Position();
-    velocity_states_[i] = m.motor->Get_Velocity();
-   }
+    double vel = m.motor->Get_Velocity();
+    // Apply deadband to velocity
+    if (std::abs(vel) < VEL_DEADBAND)
+    {
+      vel = 0.0;
+    }
+    velocity_states_[i] = vel;
+  }
   return hardware_interface::return_type::OK;
 }
 
-hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time &, const rclcpp::Duration & period)
+hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
-  if (period < rclcpp::Duration::from_seconds(0.002)) {
-    return hardware_interface::return_type::OK;
-  }
-
-  // auto logger = rclcpp::get_logger("myagvplus_hardware");
-  // auto clock = rclcpp::Clock(RCL_STEADY_TIME);
-
   for (size_t i = 0; i < motors_.size(); ++i)
   {
-
     motor_ctrl_->control_vel(*motors_[i].motor, velocity_commands_[i]);
-    // RCLCPP_INFO_THROTTLE(logger,clock,500,"Motor[%zu] cmd_vel = %.3f (rad/s)",i,velocity_commands_[i]);
   }
   return hardware_interface::return_type::OK;
 }
