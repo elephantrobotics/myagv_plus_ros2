@@ -113,7 +113,7 @@ CallbackReturn MyAGVPlusInterface::on_activate(const rclcpp_lifecycle::State &)
 
   for (auto & m : motors_) {
     m.motor = std::make_unique<damiao::Motor>(
-      damiao::DM_Motor_Type::DM4310,  
+      damiao::DM_Motor_Type::DM2325,  
       m.can_id,
       m.mst_id);
 
@@ -178,7 +178,7 @@ std::vector<hardware_interface::CommandInterface> MyAGVPlusInterface::export_com
 
 hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
-  constexpr double VEL_DEADBAND = 0.01; // rad/s
+  constexpr double VEL_DEADBAND = 0.13; // rad/s
 
   for (size_t i = 0; i < motors_.size(); ++i){
     auto & m = motors_[i];

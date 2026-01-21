@@ -46,6 +46,7 @@ namespace damiao
         DMH6215,
         DMG6220,
         DMJH11,
+        DM2325,
         Num_Of_Motor
     };
 
@@ -182,7 +183,8 @@ namespace damiao
                     {12.5,280,1},    // DMH3510
                     {12.5,45,10},    // DMH6215
                     {12.5,45,10} ,    // DMG6220
-                    {12.5,10,12}     // DMJH11
+                    {12.5,10,12} ,    // DMJH11
+                    {12.5,200,10}     // DM2325
             };
 
     class Motor
