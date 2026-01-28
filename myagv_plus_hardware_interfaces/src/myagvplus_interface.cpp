@@ -179,27 +179,29 @@ std::vector<hardware_interface::CommandInterface> MyAGVPlusInterface::export_com
 hardware_interface::return_type MyAGVPlusInterface::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
   constexpr double VEL_DEADBAND = 0.13; // rad/s
+  static constexpr int DIR[4] = { -1, +1, -1, +1 };
 
   for (size_t i = 0; i < motors_.size(); ++i){
     auto & m = motors_[i];
     motor_ctrl_->refresh_motor_status(*m.motor);
-    position_states_[i] = m.motor->Get_Position();
+    position_states_[i] = DIR[i] * m.motor->Get_Position();
     double vel = m.motor->Get_Velocity();
     // Apply deadband to velocity
     if (std::abs(vel) < VEL_DEADBAND)
     {
       vel = 0.0;
     }
-    velocity_states_[i] = vel;
+    velocity_states_[i] = DIR[i] * vel;
   }
   return hardware_interface::return_type::OK;
 }
 
 hardware_interface::return_type MyAGVPlusInterface::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
+  static constexpr int DIR[4] = { -1, +1, -1, +1 };
   for (size_t i = 0; i < motors_.size(); ++i)
   {
-    motor_ctrl_->control_vel(*motors_[i].motor, velocity_commands_[i]);
+    motor_ctrl_->control_vel(*motors_[i].motor, DIR[i] * velocity_commands_[i]);
   }
   return hardware_interface::return_type::OK;
 }

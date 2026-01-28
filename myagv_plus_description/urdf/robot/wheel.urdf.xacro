@@ -3,8 +3,8 @@
   <!-- wheel defining macro -->
   <xacro:macro name="wheel" params="side wheel_radius">
     
-    <xacro:property name="wheel_separation_x" value="0.34362" />
-    <xacro:property name="wheel_separation_y" value="0.3598" />
+    <xacro:property name="wheel_separation_x" value="0.233" />
+    <xacro:property name="wheel_separation_y" value="0.23884" />
     <xacro:property name="wheel_thickness" value="0.036" />
     <xacro:property name="mass" value="0.074" />
 
@@ -16,14 +16,14 @@
       <xacro:property name="x" value="${wheel_separation_x/2.0}" />
       <xacro:property name="y" value="${wheel_separation_y/2.0}" />
       <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_fl_link.stl" />
-      <xacro:property name="visual_rotation" value="${pi}" />
+      <xacro:property name="visual_rotation" value="${0.0}" />
       <xacro:property name="fdir" value="1.0 -1.0 0.0" />
     </xacro:if>
     <xacro:if value="${side == 'fr'}">
       <xacro:property name="x" value="${wheel_separation_x/2.0}" />
       <xacro:property name="y" value="${-wheel_separation_y/2.0}" />
       <xacro:property name="mesh" value="package://myagv_plus_description/meshes/wheel_fr_link.stl" />
-      <xacro:property name="visual_rotation" value="${pi}" />
+      <xacro:property name="visual_rotation" value="${0.0}" />
       <xacro:property name="fdir" value="1.0 1.0 0.0" />
     </xacro:if>
     <xacro:if value="${side == 'rl'}">
@@ -44,9 +44,9 @@
     <joint name="${side}_wheel_joint" type="continuous">
       <parent link="base_link" />
       <child link="${side}_wheel_link" />
-      <origin xyz="${x} ${y} 0.0" rpy="0.0 0.0 0.0" />
+      <origin xyz="${x} ${y} 0.019524" rpy="0.0 0.0 0.0" />
       <axis xyz="0.0 1.0 0.0" />
-      <limit effort="1.5" velocity="24.0" />
+      <limit effort="1.35" velocity="40.0" />
       <dynamics damping="0.001" friction="0.001" />
     </joint>
 
