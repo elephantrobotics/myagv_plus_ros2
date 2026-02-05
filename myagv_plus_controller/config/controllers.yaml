@@ -1,7 +1,7 @@
 /**:
   controller_manager:
     ros__parameters:
-      update_rate: 100
+      update_rate: 20
 
       joint_state_broadcaster:
         type: joint_state_broadcaster/JointStateBroadcaster
@@ -19,8 +19,8 @@
       rear_right_wheel_command_joint_name: rr_wheel_joint
 
       kinematics:
-        wheels_radius: 0.047
-        sum_of_robot_center_projection_on_X_Y_axis: 0.149
+        wheels_radius: 0.04
+        sum_of_robot_center_projection_on_X_Y_axis: 0.221
 
       base_frame_id: "base_footprint"
       odom_frame_id: "odom"
@@ -29,4 +29,4 @@
       pose_covariance_diagonal: [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
       twist_covariance_diagonal: [3.3e-5, 3.3e-5, 0.0, 0.0, 0.0, 2.8e-3]
 
-      use_stamped_vel: true
+      use_stamped_vel: false

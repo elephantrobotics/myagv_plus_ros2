@@ -138,12 +138,12 @@ def main():
     node = rclpy.create_node('teleop_twist_keyboard')
 
     # parameters
-    stamped = node.declare_parameter('stamped', True).value
+    stamped = node.declare_parameter('stamped', False).value
     frame_id = node.declare_parameter('frame_id', '').value
     speed = node.declare_parameter('speed', 0.25).value
-    turn = node.declare_parameter('turn', 0.5).value
-    speed_limit = node.declare_parameter('speed_limit', 1.5).value
-    turn_limit = node.declare_parameter('turn_limit', 1.5).value    
+    turn = node.declare_parameter('turn', 1.0).value
+    speed_limit = node.declare_parameter('speed_limit', 1.6).value
+    turn_limit = node.declare_parameter('turn_limit', 4.0).value
     if not stamped and frame_id:
         raise Exception("'frame_id' can only be set when 'stamped' is True")
 
