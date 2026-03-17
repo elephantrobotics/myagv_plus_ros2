@@ -16,8 +16,8 @@ class MyAgvPlusCamera(Node):
     def __init__(self):
         super().__init__('myagv_plus_camera')
         self.declare_parameter("video_sensor_id", 0)
-        self.declare_parameter("image_width", 640)
-        self.declare_parameter("image_height", 480)
+        self.declare_parameter("image_width", 1280)
+        self.declare_parameter("image_height", 720)
         self.declare_parameter("fps", 30)
         self.declare_parameter("flip_method", 2)
         self.declare_parameter("frame_id", "camera_link")
