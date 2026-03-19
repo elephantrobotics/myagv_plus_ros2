@@ -7,7 +7,7 @@
     <ros2_control name="${ns}${name}" type="system">
       <hardware>
         <plugin>myagvplus_hardware_interfaces/MyAGVPlusInterface</plugin>
-        <param name="port">/dev/ttyACM0</param>
+        <param name="port">/dev/myagvplus_controller</param>
         <param name="baudrate">921600</param>
       </hardware>
 
