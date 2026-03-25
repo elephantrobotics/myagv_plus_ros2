@@ -39,19 +39,12 @@ class LogisticsMission(Node):
             "place_point3":[90.0, 22.5, -12.48, 2.54, 50.27, -0.35],
             "place_point4":[-95.36, 7.03, -22.85, -3.07, 87.89, 1.46]
         }
-        # arm init
-        self.mc = MechArm270('/dev/ttyACM1',115200) # Connecting robotic arm
-        self.mc.set_fresh_mode(0)
+        # # arm init
+        # self.mc = MechArm270('/dev/ttyACM0',115200) # Connecting robotic arm
+        # self.mc.set_fresh_mode(0)
 
-        # Pump Init
-        self.pump_off()
-
-        # Publisher
-        self.marker_pub = self.create_publisher(
-            Int32,
-            '/target_marker_id',
-            10
-        )
+        # # Pump Init
+        # self.pump_off()
 
         self.pub_cmd_vel = self.create_publisher(
             Twist,
@@ -66,10 +59,13 @@ class LogisticsMission(Node):
 
         self.parking_client.wait_for_server()
 
+        self.get_logger().info(f"Calling parking action server with marker_id: {marker_id}")
         send_goal_future = self.parking_client.send_goal_async(goal_msg)
 
         rclpy.spin_until_future_complete(self, send_goal_future)
         goal_handle = send_goal_future.result()
+
+        print("Goal handle received from parking action server")
 
         if not goal_handle.accepted:
             self.get_logger().error("Parking goal rejected")
@@ -82,13 +78,6 @@ class LogisticsMission(Node):
 
         self.get_logger().info(f"Parking result: {result.message}")
         return result.success
-
-    def publish_marker(self, marker_id: int):
-            msg = Int32()
-            msg.data = marker_id
-
-            self.marker_pub.publish(msg)
-            self.get_logger().info(f'Published /target_marker_id: {marker_id}')
 
     def pump_on(self):
         self.mc.set_basic_output(2,0)#0 - low 1 - high
@@ -224,25 +213,30 @@ class LogisticsMission(Node):
         # Wait for navigation to fully activate, since autostarting nav2
         # self.navigator.waitUntilNav2Active()
 
-        goal_A = [0.67125,0.0014235,-0.0079793, 0.99997]
-        goal_B = [0.084248,-0.16886,-0.68813,0.72558]
+        # goal_A = [0.67125,0.0014235,-0.0079793, 0.99997]
+        # goal_B = [0.084248,-0.16886,-0.68813,0.72558]
 
-        x_goal, y_goal, orientation_z, orientation_w = goal_A
-        success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
-        print("Navigation result:", success)
+        # x_goal, y_goal, orientation_z, orientation_w = goal_A
+        # success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
+        # print("Navigation result:", success)
 
-        if not success:
-            return
+        # if not success:
+        #     return
 
-        self.call_parking(marker_id=5)
+        self.call_parking(marker_id=11)
+        print("1111111111111111111111111")
 
         pass # arm control to pick up object
 
-        x_goal, y_goal, orientation_z, orientation_w = goal_B
-        success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
-        print("Navigation result:", success)
+        time.sleep(10)
 
-        self.call_parking(marker_id=5)
+        # x_goal, y_goal, orientation_z, orientation_w = goal_B
+        # success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
+        # print("Navigation result:", success)
+
+        print("2222222222222222222222222")
+        self.call_parking(marker_id=11)
+        print("3333333333333333333333333")
 
         pass # arm control to place object
 
