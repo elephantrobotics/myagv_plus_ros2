@@ -11,13 +11,8 @@ from rclpy.duration import Duration
 from rclpy.action import ActionClient
 from myagv_plus_msgs.action import Parking
 
-# import Jetson.GPIO as GPIO
 import time
-from pymycobot import MechArm270
-
-"""
-Basic navigation demo to go to poses.
-"""
+from smart_logistics_kit_lite.arm_controller import MechArm270Control
 
 class LogisticsMission(Node):
     def __init__(self):
@@ -28,23 +23,8 @@ class LogisticsMission(Node):
         # parking control action client
         self.parking_client = ActionClient(self, Parking, 'parking_action')
 
-        self.angle_table = {
-            "zero_position":[0,0,0,0,0,0],
-            "move_init":[90.06, -30.41, 22.14, -1.05, 87.45, 0.39],
-            "pick_init":[5.44, 6.5, -13.09, -2.54, 81.82, -4.3],
-            "pick_watch":[94.13, 15.2, -21.88, 0.96, 90.79, 4.57],
-            "pick_point2":[-57.91, 0.61, -8.34, 6.32, 19.24, -2.19],
-            "place_init":[-93.6, 1.93, 6.24, -0.17, 68.81, -6.24],
-            "place_point2":[-7.11, -5.62, -14.85, 0.87, 77.95, -10.37],
-            "place_point3":[90.0, 22.5, -12.48, 2.54, 50.27, -0.35],
-            "place_point4":[-95.36, 7.03, -22.85, -3.07, 87.89, 1.46]
-        }
         # # arm init
-        # self.mc = MechArm270('/dev/ttyACM0',115200) # Connecting robotic arm
-        # self.mc.set_fresh_mode(0)
-
-        # # Pump Init
-        # self.pump_off()
+        self.ma = MechArm270Control('/dev/ttyACM0',115200)
 
         self.pub_cmd_vel = self.create_publisher(
             Twist,
@@ -78,17 +58,6 @@ class LogisticsMission(Node):
 
         self.get_logger().info(f"Parking result: {result.message}")
         return result.success
-
-    def pump_on(self):
-        self.mc.set_basic_output(2,0)#0 - low 1 - high
-        self.mc.set_basic_output(5,1)
-
-
-    def pump_off(self):
-        self.mc.set_basic_output(2,1)#0 - low 1 - high
-        self.mc.set_basic_output(5,0)
-        time.sleep(0.05)
-        self.mc.set_basic_output(2,1)
 
     def create_pose(self, x, y, z, w):
         pose = PoseStamped()
@@ -199,46 +168,46 @@ class LogisticsMission(Node):
         twist = Twist()
         twist.linear.x = x
         twist.linear.y = y
-        twist.linear.z = 0
-        twist.angular.x = 0
-        twist.angular.y = 0
+        twist.linear.z = 0.0
+        twist.angular.x = 0.0
+        twist.angular.y = 0.0
         twist.angular.z = theta
         self.pub_cmd_vel.publish(twist)
 
     def run(self):
-
         # Set robot initial pose
         # self.set_initial_pose(x=0.0, y=0.0, oz=0.0, ow=1.0)
 
         # Wait for navigation to fully activate, since autostarting nav2
         # self.navigator.waitUntilNav2Active()
 
-        # goal_A = [0.67125,0.0014235,-0.0079793, 0.99997]
-        # goal_B = [0.084248,-0.16886,-0.68813,0.72558]
+        goal_A = [0.67125,0.0014235,-0.0079793, 0.99997]
+        goal_B = [0.084248,-0.16886,-0.68813,0.72558]
 
-        # x_goal, y_goal, orientation_z, orientation_w = goal_A
-        # success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
-        # print("Navigation result:", success)
+        for i in range(2):
+            x_goal, y_goal, orientation_z, orientation_w = goal_A
+            success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
+            print("Navigation result:", success)
 
-        # if not success:
-        #     return
+            if not success:
+                return
 
-        self.call_parking(marker_id=11)
-        print("1111111111111111111111111")
+            self.call_parking(marker_id=4)
 
-        pass # arm control to pick up object
+            if i == 0:
+                box_height = 50
+            elif i == 1:
+                box_height = 50
 
-        time.sleep(10)
+            self.ma.pick(box_height)
 
-        # x_goal, y_goal, orientation_z, orientation_w = goal_B
-        # success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
-        # print("Navigation result:", success)
+            x_goal, y_goal, orientation_z, orientation_w = goal_B
+            success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
+            print("Navigation result:", success)
 
-        print("2222222222222222222222222")
-        self.call_parking(marker_id=11)
-        print("3333333333333333333333333")
+            self.call_parking(marker_id=5)
 
-        pass # arm control to place object
+            self.ma.place()
 
 def main(args=None):
     rclpy.init(args=args)

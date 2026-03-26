@@ -1,23 +1,19 @@
 #! /usr/bin/env python3
-import rclpy
 from rclpy.node import Node
 import numpy as np
 
 # import Jetson.GPIO as GPIO
 import time
 from pymycobot import MechArm270
-
-import Jetson.GPIO as GPIO
-GPIO.setmode(GPIO.BOARD)
-"""
-Basic navigation demo to go to poses.
-"""
+from smart_logistics_kit_lite.QRCodeScanner import QRCodeScanner
 
 class MechArm270Control(Node):
     def __init__(self,port='/dev/ttyACM1',baudrate=115200):
         self.mc = MechArm270(port, baudrate) 
         self.mc.set_fresh_mode(0)
         
+        self.scanner = QRCodeScanner("/dev/video1")
+
         self.angle_table = {
             "zero_position":[0,0,0,0,0,0],
             "move_init":[90.06, -30.41, 22.14, -1.05, 87.45, 0.39],
@@ -29,13 +25,6 @@ class MechArm270Control(Node):
             "place_point3":[90.0, 22.5, -12.48, 2.54, 50.27, -0.35],
             "place_point4":[-95.36, 7.03, -22.85, -3.07, 87.89, 1.46]
         }
-
-    def wait(self):
-        time.sleep(0.3)
-        state = self.mc.is_moving()
-        while state != 0:
-            state = self.mc.is_moving()
-            time.sleep(0.1)
 
     def pump_on(self):
         self.mc.set_basic_output(2, 0)
@@ -55,6 +44,13 @@ class MechArm270Control(Node):
         self.mc.send_coords(coords, speed, mode)
         self.wait()
 
+    def wait(self):
+        time.sleep(0.3)
+        state = self.mc.is_moving()
+        while state != 0:
+            state = self.mc.is_moving()
+            time.sleep(0.1)
+            
     def get_coords_safe(self):
         coords = self.mc.get_coords()
         while coords is None:
@@ -62,19 +58,19 @@ class MechArm270Control(Node):
             coords = self.mc.get_coords()
         return coords
 
-    def Rx(theta):
+    def Rx(self, theta):
         return np.array([[1, 0, 0],
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]])
 
 
-    def Ry(theta):
+    def Ry(self, theta):
         return np.array([[np.cos(theta), 0, np.sin(theta)],
                         [0, 1, 0],
                         [-np.sin(theta), 0, np.cos(theta)]])
 
 
-    def Rz(theta):
+    def Rz(self, theta):
         return np.array([[np.cos(theta), -np.sin(theta), 0],
                         [np.sin(theta), np.cos(theta), 0],
                         [0, 0, 1]])
@@ -117,11 +113,11 @@ class MechArm270Control(Node):
         return mat
 
 
-    def pick(self, angle_watch, box_height, scanner, angle_table):
-        self.move_angles(angle_watch, 80)
+    def pick(self, box_height):
+        self.move_angles(self.angle_table["pick_watch"], 60)
 
         while True:
-            qr_texts, tvecs = scanner.start_capture()
+            qr_texts, tvecs = self.scanner.start_capture()
             time.sleep(1)
 
             if qr_texts is None:
@@ -150,8 +146,8 @@ class MechArm270Control(Node):
             curr_coords[2] += 40
             self.move_coords(curr_coords, 40)
 
-            self.move_angles(angle_table["pick_point2"], 50)
-            self.move_angles(angle_table["place_init"], 80)
+            self.move_angles(self.angle_table["pick_point2"], 50)
+            self.move_angles(self.angle_table["place_init"], 80)
 
             coords = self.get_coords_safe()
             coords[2] -= 45
@@ -163,13 +159,13 @@ class MechArm270Control(Node):
             coords[2] += 45
             self.move_coords(coords, 40)
 
-            self.move_angles(angle_table["place_point4"], 50)
+            self.move_angles(self.angle_table["place_point4"], 50)
 
             return qr_texts
 
-    def place(self, angle_table):
+    def place(self):
         self.move_angles([0,0,0,0,0,0], 60)
-        self.move_angles(angle_table["place_init"], 50)
+        self.move_angles(self.angle_table["place_init"], 50)
 
         coords = self.get_coords_safe()
         coords[2] -= 70
@@ -182,18 +178,11 @@ class MechArm270Control(Node):
         coords[2] += 70
         self.move_coords(coords, 40)
 
-        self.move_angles(angle_table["place_point4"], 50)
-        self.move_angles(angle_table["place_point2"], 50)
-        self.move_angles(angle_table["place_point3"], 50)
+        self.move_angles(self.angle_table["place_point4"], 50)
+        self.move_angles(self.angle_table["place_point2"], 50)
+        self.move_angles(self.angle_table["place_point3"], 50)
 
         self.pump_off()
         time.sleep(2)
 
-        self.move_angles(angle_table["move_init"], 50)
-
-if __name__ == '__main__':
-    rclpy.init()
-    node = MechArm270Control()
-    node.run()
-    node.destroy_node()
-    rclpy.shutdown()
+        self.move_angles(self.angle_table["move_init"], 50)
