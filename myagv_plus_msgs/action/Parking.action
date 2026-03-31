@@ -1,0 +1,6 @@
+int32 marker_id
+---
+bool success
+string message
+---
+int32 current_state
