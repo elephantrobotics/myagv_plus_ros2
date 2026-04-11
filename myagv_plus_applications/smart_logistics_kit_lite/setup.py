@@ -24,6 +24,7 @@ setup(
             'main = smart_logistics_kit_lite.main:main',
             'parking = smart_logistics_kit_lite.parking:main',
             'arm_controller = smart_logistics_kit_lite.arm_controller:main',
+            'relative_move = smart_logistics_kit_lite.relative_move:main'
         ],
     },
 )

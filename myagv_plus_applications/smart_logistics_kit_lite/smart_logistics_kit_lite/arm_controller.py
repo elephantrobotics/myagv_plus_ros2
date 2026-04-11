@@ -161,6 +161,15 @@ class MechArm270Control(Node):
 
             self.move_angles(self.angle_table["place_point4"], 50)
 
+            try:
+                if self.scanner is not None:
+                    self.scanner.release_resources()
+                    del self.scanner
+            except Exception as e:
+                print(f"release scanner error: {e}")
+
+            self.scanner = QRCodeScanner("/dev/video1")
+
             return qr_texts
 
     def place(self):
