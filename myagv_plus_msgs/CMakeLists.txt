@@ -14,8 +14,10 @@ find_package(rosidl_default_generators REQUIRED)
 # find_package(<dependency> REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv//ParkingControl.srv"
   "action//Parking.action"
+  "srv//ParkingControl.srv"
+  "srv/SetLedColor.srv"
+  "srv/SetLedMode.srv"
   DEPENDENCIES std_msgs
 )
 

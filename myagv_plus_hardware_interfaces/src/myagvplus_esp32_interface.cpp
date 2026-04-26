@@ -15,7 +15,7 @@ CallbackReturn MyAGVPlusEsp32Interface::on_init(const hardware_interface::Hardwa
   baudrate_ = std::stoi(info_.hardware_parameters.at("baudrate"));
 
   RCLCPP_INFO(
-    rclcpp::get_logger("MyAGVPlusEsp32_Interface"),
+    rclcpp::get_logger("sp32_hw"),
     "Using port=%s baudrate=%d", port_.c_str(), baudrate_);
 
   if (!initSerial(port_, baudrate_))
@@ -29,7 +29,7 @@ CallbackReturn MyAGVPlusEsp32Interface::on_init(const hardware_interface::Hardwa
 
 CallbackReturn MyAGVPlusEsp32Interface::on_activate(const rclcpp_lifecycle::State &)
 {
-  RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusEsp32Interface"), "Activated");
+  RCLCPP_INFO(rclcpp::get_logger("sp32_hw"), "Activated");
   return CallbackReturn::SUCCESS;
 }
 
@@ -43,19 +43,11 @@ std::vector<hardware_interface::StateInterface>
 MyAGVPlusEsp32Interface::export_state_interfaces()
 {
   std::vector<hardware_interface::StateInterface> state_interfaces;
-
-  state_interfaces.emplace_back("imu", "orientation.x", &ori_[0]);
-  state_interfaces.emplace_back("imu", "orientation.y", &ori_[1]);
-  state_interfaces.emplace_back("imu", "orientation.z", &ori_[2]);
-  state_interfaces.emplace_back("imu", "orientation.w", &ori_[3]);
-
-  state_interfaces.emplace_back("imu", "angular_velocity.x", &ang_[0]);
-  state_interfaces.emplace_back("imu", "angular_velocity.y", &ang_[1]);
-  state_interfaces.emplace_back("imu", "angular_velocity.z", &ang_[2]);
-
-  state_interfaces.emplace_back("imu", "linear_acceleration.x", &lin_[0]);
-  state_interfaces.emplace_back("imu", "linear_acceleration.y", &lin_[1]);
-  state_interfaces.emplace_back("imu", "linear_acceleration.z", &lin_[2]);
+  for (auto i = 0u; i < info_.sensors[0].state_interfaces.size(); i++) {
+    state_interfaces.emplace_back(hardware_interface::StateInterface(
+        info_.sensors[0].name, info_.sensors[0].state_interfaces[i].name,
+        &imu_sensor_state_[i]));
+  }
 
   return state_interfaces;
 }
@@ -74,7 +66,22 @@ std::vector<hardware_interface::CommandInterface> MyAGVPlusEsp32Interface::expor
 hardware_interface::return_type
 MyAGVPlusEsp32Interface::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
-  readFrame();
+  if (!readFrame())
+    return hardware_interface::return_type::OK;
+
+  tf2::Quaternion qua;
+  qua.setRPY(0, 0, yaw * M_PI / 180.0);
+
+  imu_sensor_state_[0] = qua[0];
+  imu_sensor_state_[1] = qua[1];
+  imu_sensor_state_[2] = qua[2];
+  imu_sensor_state_[3] = qua[3];
+  imu_sensor_state_[4] = imu_data.angular_velocity.x;
+  imu_sensor_state_[5] = imu_data.angular_velocity.y;
+  imu_sensor_state_[6] = imu_data.angular_velocity.z;
+  imu_sensor_state_[7] = imu_data.linear_acceleration.x;
+  imu_sensor_state_[8] = imu_data.linear_acceleration.y;
+  imu_sensor_state_[9] = imu_data.linear_acceleration.z;
 
   return hardware_interface::return_type::OK;
 }
@@ -82,9 +89,7 @@ MyAGVPlusEsp32Interface::read(const rclcpp::Time &, const rclcpp::Duration &)
 hardware_interface::return_type
 MyAGVPlusEsp32Interface::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
-
   sendLedCommand();
-
   return hardware_interface::return_type::OK;
 }
 
@@ -208,7 +213,7 @@ bool MyAGVPlusEsp32Interface::readFrame()
   // print_hex("recv_buf", recv_buf); //debug
 
   if (recv_buf[3] != 0x25) {
-    //RCLCPP_WARN(this->get_logger("Command error:0x%02X"), , recv_buf[2]); //debug
+    //RCLCPP_WARN(rclcpp::get_logger("MyAGVPlusEsp32Interface"), "Command error:0x%02X", recv_buf[2]); //debug
     return false;
   }
 
@@ -216,32 +221,33 @@ bool MyAGVPlusEsp32Interface::readFrame()
   uint16_t computed_crc = crc16_ibm(recv_buf.data(), RECEIVE_FRAME_SIZE-2);
 
   if (received_crc != computed_crc) {
-    RCLCPP_WARN(this->get_logger(), "CRC error: received 0x%04X, calculated 0x%04X", received_crc, computed_crc);
+    RCLCPP_WARN(
+      rclcpp::get_logger("MyAGVPlusEsp32Interface"),
+      "CRC error: received 0x%04X, calculated 0x%04X",
+      received_crc, computed_crc);
     return false;
   }
 
-  vx = static_cast<double>(static_cast<int8_t>(recv_buf[4])) * 0.01;
-  vy = static_cast<double>(static_cast<int8_t>(recv_buf[5])) * 0.01;
-  vtheta = static_cast<double>(static_cast<int8_t>(recv_buf[6])) * 0.01;
+  battery_status = recv_buf[1];
+  imu_status     = recv_buf[2];
+  battery_rating = recv_buf[3];
+  battery_charging_status = recv_buf[4];
+  battery_voltage = static_cast<float>(recv_buf[5]) / 10.0f;
+  battery_backup_voltage = static_cast<float>(recv_buf[6]) / 10.0f;
 
-  motor_status = recv_buf[7];
-  motor_error  = recv_buf[8];
-  battery_voltage = static_cast<float>(recv_buf[9]) / 10.0f;
-  enable_status = recv_buf[10];
+  imu_data.linear_acceleration.x = static_cast<double>(static_cast<int16_t>((recv_buf[7] << 8) | recv_buf[8])) * 0.01;
+  imu_data.linear_acceleration.y = static_cast<double>(static_cast<int16_t>((recv_buf[9] << 8) | recv_buf[10])) * 0.01;
+  imu_data.linear_acceleration.z = static_cast<double>(static_cast<int16_t>((recv_buf[11] << 8) | recv_buf[12])) * 0.01;
 
-  imu_data.linear_acceleration.x = static_cast<double>(static_cast<int16_t>((recv_buf[11] << 8) | recv_buf[12])) * 0.01;
-  imu_data.linear_acceleration.y = static_cast<double>(static_cast<int16_t>((recv_buf[13] << 8) | recv_buf[14])) * 0.01;
-  imu_data.linear_acceleration.z = static_cast<double>(static_cast<int16_t>((recv_buf[15] << 8) | recv_buf[16])) * 0.01;
+  imu_data.angular_velocity.x = static_cast<double>(static_cast<int16_t>((recv_buf[13] << 8) | recv_buf[14])) * 0.01;
+  imu_data.angular_velocity.y = static_cast<double>(static_cast<int16_t>((recv_buf[15] << 8) | recv_buf[16])) * 0.01;
+  imu_data.angular_velocity.z = static_cast<double>(static_cast<int16_t>((recv_buf[17] << 8) | recv_buf[18])) * 0.01;
 
-  imu_data.angular_velocity.x = static_cast<double>(static_cast<int16_t>((recv_buf[17] << 8) | recv_buf[18])) * 0.01;
-  imu_data.angular_velocity.y = static_cast<double>(static_cast<int16_t>((recv_buf[19] << 8) | recv_buf[20])) * 0.01;
-  imu_data.angular_velocity.z = static_cast<double>(static_cast<int16_t>((recv_buf[21] << 8) | recv_buf[22])) * 0.01;
+  roll  = static_cast<double>(static_cast<int16_t>((recv_buf[19] << 8) | recv_buf[20])) * 0.01;
+  pitch = static_cast<double>(static_cast<int16_t>((recv_buf[21] << 8) | recv_buf[22])) * 0.01;
+  yaw   = static_cast<double>(static_cast<int16_t>((recv_buf[23] << 8) | recv_buf[24])) * 0.01;
 
-  roll  = static_cast<double>(static_cast<int16_t>((recv_buf[23] << 8) | recv_buf[24])) * 0.01;
-  pitch = static_cast<double>(static_cast<int16_t>((recv_buf[25] << 8) | recv_buf[26])) * 0.01;
-  yaw   = static_cast<double>(static_cast<int16_t>((recv_buf[27] << 8) | recv_buf[28])) * 0.01;
-
-  // RCLCPP_INFO(this->get_logger(),
+  // RCLCPP_INFO(rclcpp::get_logger("MyAGVPlusEsp32Interface"),,
   // "IMU Data - Accel[x: %.2f, y: %.2f, z: %.2f], "
   // "Gyro[x: %.2f, y: %.2f, z: %.2f], "
   // "RPY[roll: %.2f, pitch: %.2f, yaw: %.2f]",
@@ -256,19 +262,18 @@ bool MyAGVPlusEsp32Interface::readFrame()
   return true;
 }
 
-void MyAGVPlusEsp32Interface::parseImu(const std::vector<uint8_t> & frame)
-{
-  std::lock_guard<std::mutex> lock(mtx_);
-
-  // TODO: 按你协议解析
-}
-
-// ================= WRITE =================
 void MyAGVPlusEsp32Interface::sendLedCommand()
 {
-  // TODO:
-  // buildFrame()
-  // boost::asio::write()
+  uint8_t r = static_cast<uint8_t>(cmd_r_);
+  uint8_t g = static_cast<uint8_t>(cmd_g_);
+  uint8_t b = static_cast<uint8_t>(cmd_b_);
+
+  auto frame = buildFrame(0x10, {r, g, b});
+
+  if (serial_port_ && serial_port_->is_open())
+  {
+    boost::asio::write(*serial_port_, boost::asio::buffer(frame));
+  }
 }
 
 }  // namespace myagvplus_hardware_interfaces
