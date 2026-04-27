@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv//ParkingControl.srv"
   "srv/SetLedColor.srv"
   "srv/SetLedMode.srv"
+  "srv/QueryDevice.srv"
   DEPENDENCIES std_msgs
 )
 

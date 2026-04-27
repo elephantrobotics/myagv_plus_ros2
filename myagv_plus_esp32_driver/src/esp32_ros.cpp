@@ -55,6 +55,21 @@ void MyAGV_Plus::send_serial_frame(const std::vector<uint8_t>& frame, bool debug
   }
 }
 
+std::vector<uint8_t> MyAGV_Plus::send_and_wait(
+  uint8_t cmd_id,
+  const std::vector<uint8_t>& payload,
+  size_t resp_payload_size,
+  double timeout_sec)
+{
+  auto frame = build_serial_frame(cmd_id, payload);
+
+  send_serial_frame(frame, true);
+
+  const std::vector<uint8_t> header = {0xFE, 0xFE, 0x0B, cmd_id};
+
+  return read_serial_response(header, resp_payload_size, timeout_sec);
+}
+
 std::vector<uint8_t> MyAGV_Plus::read_serial_response(
   const std::vector<uint8_t>& expected_header,
   size_t payload_size,
@@ -180,13 +195,14 @@ void MyAGV_Plus::handleSetLedColor(
   uint8_t g          = static_cast<uint8_t>(request->g);
   uint8_t b          = static_cast<uint8_t>(request->b);
 
-  auto frame = build_serial_frame(SET_LED_COLOR, {position, brightness, r, g, b});
-  send_serial_frame(frame, true);
-
-  const std::vector<uint8_t> expected_header = {0xFE, 0xFE, 0x0B, SET_LED_COLOR};
-  auto response_frame = read_serial_response(expected_header, 8, 5.0);
-
-  // print_hex("recv_buf", response_frame); //debug
+  auto response_frame = send_and_wait(SET_LED_COLOR, {position, brightness, r, g, b}, 8, 5.0);
+  
+  if (response_frame.empty()) {
+    RCLCPP_ERROR(this->get_logger(), "No response received for SetLedColor command");
+    response->success = false;
+    response->message = "No response received";
+    return;
+  }
 
   uint8_t status = response_frame[4];
   if (status == 0x01) {
@@ -206,13 +222,14 @@ void MyAGV_Plus::handleSetLedMode(
 {
   uint8_t mode = request->mode ? 0x01 : 0x00;
 
-  auto frame = build_serial_frame(SET_LED_MODE, {mode});
-  send_serial_frame(frame, true);
+  auto response_frame = send_and_wait(SET_LED_MODE, {mode}, 8, 5.0);
 
-  const std::vector<uint8_t> expected_header = {0xFE, 0xFE, 0x0B, SET_LED_MODE};
-  auto response_frame = read_serial_response(expected_header, 8, 5.0);
-
-  // print_hex("recv_buf", response_frame); //debug
+  if (response_frame.empty()) {
+    RCLCPP_ERROR(this->get_logger(), "No response received for SetLedMode command");
+    response->success = false;
+    response->message = "No response received";
+    return;
+  }
 
   uint8_t status = response_frame[4];
   if (status == 0x01) {
@@ -226,8 +243,26 @@ void MyAGV_Plus::handleSetLedMode(
   }
 }
 
+void MyAGV_Plus::handleQueryDevice(
+  const std::shared_ptr<myagv_plus_msgs::srv::QueryDevice::Request> request,
+  std::shared_ptr<myagv_plus_msgs::srv::QueryDevice::Response> response)
+{
+  uint8_t cmd = request->cmd_id;
+
+  auto resp = send_and_wait(cmd, {}, 8, 3.0);
+
+  if (resp.empty()) {
+    response->success = false;
+    return;
+  }
+
+  response->success = true;
+  response->data = resp;
+}
+
 bool MyAGV_Plus::readData()
 {
+  std::lock_guard<std::mutex> lock(serial_mutex_);
   std::vector<uint8_t> buf_length(1);
   std::vector<uint8_t> data_buf(RECEIVE_PAYLOAD_SIZE);
 
@@ -416,6 +451,11 @@ MyAGV_Plus::MyAGV_Plus(std::string node_name):rclcpp::Node(node_name)
   set_led_mode_service = this->create_service<myagv_plus_msgs::srv::SetLedMode>(
     "set_led_mode",
     std::bind(&MyAGV_Plus::handleSetLedMode, this, std::placeholders::_1, std::placeholders::_2)
+  );
+
+  query_service_ = this->create_service<myagv_plus_msgs::srv::QueryDevice>(
+    "query_device",
+    std::bind(&MyAGV_Plus::handleQueryDevice, this, std::placeholders::_1, std::placeholders::_2)
   );
 
   lastTime = this->get_clock()->now();

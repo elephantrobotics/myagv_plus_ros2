@@ -4,6 +4,7 @@
 #include <algorithm> 
 #include <iostream>
 #include <boost/asio.hpp>
+#include <mutex>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -14,12 +15,17 @@
 
 #include "myagv_plus_msgs/srv/set_led_color.hpp"
 #include "myagv_plus_msgs/srv/set_led_mode.hpp"
+#include "myagv_plus_msgs/srv/query_device.hpp"
 
 #define SEND_DATA_SIZE 14                               // Total bytes in a command frame to ESP32(version>=V1.0.8)
 #define RECEIVE_FRAME_SIZE 31                           // Total bytes in a frame from ESP32(version>=V1.0.8)
 #define RECEIVE_PAYLOAD_SIZE (RECEIVE_FRAME_SIZE - 3)   // Payload length (excluding header)
 
+#define GET_MODIFY_VERSION 0x01
+#define GET_SYSTEM_VERSION 0x02
+#define GET_ROBOT_STATUS 0x05
 #define SET_AUTO_REPORT_STATE 0x23
+#define GET_AUTO_REPORT 0x24
 #define SET_LED_COLOR 0x34
 #define SET_LED_MODE 0x3A
 
@@ -135,6 +141,12 @@ private:
    */
   void publisherImuSensor();
 
+  std::vector<uint8_t> send_and_wait(
+    uint8_t cmd_id,
+    const std::vector<uint8_t>& payload,
+    size_t resp_payload_size,
+    double timeout_sec);
+
   void handleSetLedColor(
     const std::shared_ptr<myagv_plus_msgs::srv::SetLedColor::Request> request,
     std::shared_ptr<myagv_plus_msgs::srv::SetLedColor::Response> response);
@@ -143,9 +155,14 @@ private:
     const std::shared_ptr<myagv_plus_msgs::srv::SetLedMode::Request> request,
     std::shared_ptr<myagv_plus_msgs::srv::SetLedMode::Response> response);
 
+  void handleQueryDevice(
+    const std::shared_ptr<myagv_plus_msgs::srv::QueryDevice::Request> request,
+    std::shared_ptr<myagv_plus_msgs::srv::QueryDevice::Response> response);
+
 private:
   boost::asio::io_service io_;
   std::unique_ptr<boost::asio::serial_port> serial_port_;
+  std::mutex serial_mutex_;
 
   std::string frame_id_of_imu_;
   std::string name_space_;
@@ -181,6 +198,7 @@ private:
 
   rclcpp::Service<myagv_plus_msgs::srv::SetLedColor>::SharedPtr set_led_service;
   rclcpp::Service<myagv_plus_msgs::srv::SetLedMode>::SharedPtr set_led_mode_service;
+  rclcpp::Service<myagv_plus_msgs::srv::QueryDevice>::SharedPtr query_service_;
 
 };
 
