@@ -20,13 +20,17 @@ find_package(myagv_plus_msgs REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
-add_executable(myagv_plus_esp32 src/myagv_plus_esp32.cpp)
-target_include_directories(myagv_plus_esp32 PUBLIC
+add_executable(esp32_node 
+  src/esp32_node.cpp
+  src/esp32_ros.cpp
+)
+
+target_include_directories(esp32_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_compile_features(myagv_plus_esp32 PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_features(esp32_node PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
-ament_target_dependencies(myagv_plus_esp32
+ament_target_dependencies(esp32_node
   rclcpp
   tf2
   tf2_ros
@@ -38,7 +42,7 @@ ament_target_dependencies(myagv_plus_esp32
   myagv_plus_msgs
 )
 
-install(TARGETS myagv_plus_esp32
+install(TARGETS esp32_node
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)

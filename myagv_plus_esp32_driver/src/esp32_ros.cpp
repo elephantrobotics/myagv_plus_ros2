@@ -411,10 +411,10 @@ void MyAGV_Plus::Control()
   if (true == readData())
   {
     currentTime = this->get_clock()->now();
-    double dt = 0.0;
-    if (lastTime.nanoseconds() != 0) {
-      dt = (currentTime - lastTime).seconds();
-    }
+    // double dt = 0.0;
+    // if (lastTime.nanoseconds() != 0) {
+    //  dt = (currentTime - lastTime).seconds();
+    // }
 
     lastTime = currentTime;
     // RCLCPP_INFO(this->get_logger(), "dt:%f", dt);
