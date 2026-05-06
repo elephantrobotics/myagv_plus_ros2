@@ -77,7 +77,7 @@ class AutomaticParkingVision(Node):
         self.marker_2d_pose_y = 0.0
         self.marker_2d_theta = 0.0
 
-        self.parking_distance_to_marker = 0.30
+        self.parking_distance_to_marker = 0.285
 
         self.previous_robot_2d_theta = 0.0
         self.total_robot_2d_theta = 0.0

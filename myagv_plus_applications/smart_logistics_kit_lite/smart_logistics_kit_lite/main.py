@@ -3,7 +3,6 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from rclpy.qos import QoSProfile
-from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from rclpy.duration import Duration
@@ -11,8 +10,8 @@ from rclpy.duration import Duration
 from rclpy.action import ActionClient
 from myagv_plus_msgs.action import Parking
 
-import time
 from smart_logistics_kit_lite.arm_controller import MechArm270Control
+from smart_logistics_kit_lite.relative_move import RelativeMoveController
 
 class LogisticsMission(Node):
     def __init__(self):
@@ -25,6 +24,7 @@ class LogisticsMission(Node):
 
         # # arm init
         self.ma = MechArm270Control('/dev/ttyACM0',115200)
+        self.rel_move = RelativeMoveController(self)
 
         self.pub_cmd_vel = self.create_publisher(
             Twist,
@@ -163,16 +163,6 @@ class LogisticsMission(Node):
         else:
             print('Goal has an invalid return status!')
         return False
-    
-    def pub_vel(self, x, y , theta):
-        twist = Twist()
-        twist.linear.x = x
-        twist.linear.y = y
-        twist.linear.z = 0.0
-        twist.angular.x = 0.0
-        twist.angular.y = 0.0
-        twist.angular.z = theta
-        self.pub_cmd_vel.publish(twist)
 
     def run(self):
         # Set robot initial pose
@@ -182,7 +172,8 @@ class LogisticsMission(Node):
         # self.navigator.waitUntilNav2Active()
 
         goal_A = [0.67125,0.0014235,-0.0079793, 0.99997]
-        goal_B = [0.084248,-0.16886,-0.68813,0.72558]
+        goal_B = [0.79738,0.03012,0.99985,-0.017047]
+        goal_C = [0.084248,-0.16886,-0.68813,0.72558]
 
         for i in range(2):
             x_goal, y_goal, orientation_z, orientation_w = goal_A
@@ -192,20 +183,24 @@ class LogisticsMission(Node):
             if not success:
                 return
 
-            self.call_parking(marker_id=4)
+            self.call_parking(marker_id=7)
 
             if i == 0:
-                box_height = 50
+                box_height = 25
             elif i == 1:
-                box_height = 50
+                box_height = 25
 
             self.ma.pick(box_height)
 
             x_goal, y_goal, orientation_z, orientation_w = goal_B
             success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
+
+
+            x_goal, y_goal, orientation_z, orientation_w = goal_C
+            success = self.navigate_to_goal(x_goal, y_goal, orientation_z, orientation_w)
             print("Navigation result:", success)
 
-            self.call_parking(marker_id=5)
+            self.call_parking(marker_id=6)
 
             self.ma.place()
 
