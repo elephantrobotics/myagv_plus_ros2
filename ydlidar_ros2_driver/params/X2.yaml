@@ -1,6 +1,6 @@
 ydlidar_ros2_driver_node:
   ros__parameters:
-    port: /dev/ttyUSB0
+    port: /dev/ttyTHS1
     frame_id: laser_link
     ignore_array: "-50,50"
     baudrate: 115200
