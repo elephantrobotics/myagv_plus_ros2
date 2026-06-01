@@ -26,6 +26,14 @@ def generate_launch_description():
         )
     )
 
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "namespace",
+            default_value="",
+            description="Namespace for the robot"
+        )
+    )
+
     robot_controllers = PathJoinSubstitution(
         [
             FindPackageShare("myagv_plus_controller"),

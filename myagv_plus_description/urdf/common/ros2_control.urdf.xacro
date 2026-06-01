@@ -16,8 +16,8 @@
         <state_interface name="position" />
         <state_interface name="velocity" />
 
-        <param name="can_id">0x01</param>
-        <param name="mst_id">0x11</param>
+        <param name="can_id">0x02</param>
+        <param name="mst_id">0x12</param>
       </joint>
 
       <joint name="fr_wheel_joint">
@@ -25,8 +25,8 @@
         <state_interface name="position" />
         <state_interface name="velocity" />
 
-        <param name="can_id">0x02</param>
-        <param name="mst_id">0x12</param>
+        <param name="can_id">0x03</param>
+        <param name="mst_id">0x13</param>
       </joint>
 
       <joint name="rl_wheel_joint">
@@ -34,8 +34,8 @@
         <state_interface name="position" />
         <state_interface name="velocity" />
 
-        <param name="can_id">0x03</param>
-        <param name="mst_id">0x13</param>
+        <param name="can_id">0x01</param>
+        <param name="mst_id">0x11</param>
       </joint>
       
       <joint name="rr_wheel_joint">

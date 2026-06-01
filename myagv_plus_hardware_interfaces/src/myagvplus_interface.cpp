@@ -26,12 +26,12 @@ CallbackReturn MyAGVPlusInterface::on_init(const hardware_interface::HardwareInf
     motor.can_id = std::stoi(joint.parameters.at("can_id"), nullptr, 0);
     motor.mst_id = std::stoi(joint.parameters.at("mst_id"), nullptr, 0);
 
-    motors_.emplace_back(std::move(motor));
-
     RCLCPP_INFO(
       rclcpp::get_logger("MyAGVPlusInterface"),
       "Joint %s -> CAN:0x%X MST:0x%X",
       motor.joint_name.c_str(), motor.can_id, motor.mst_id);
+    
+    motors_.emplace_back(std::move(motor));
   }
 
   size_t num_joints = info_.joints.size();
