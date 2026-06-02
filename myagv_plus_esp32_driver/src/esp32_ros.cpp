@@ -425,7 +425,7 @@ void MyAGV_Plus::Control()
 
 MyAGV_Plus::MyAGV_Plus(std::string node_name):rclcpp::Node(node_name)
 {
-  this->declare_parameter<std::string>("port_name","/dev/myagv_plus_esp32");
+  this->declare_parameter<std::string>("port_name","/dev/myagvplus_esp32");
   this->declare_parameter<std::string>("odometry.frame_id", "odom");
   this->declare_parameter<std::string>("odometry.child_frame_id", "base_footprint");
   this->declare_parameter<std::string>("imu.frame_id", "imu_link");
