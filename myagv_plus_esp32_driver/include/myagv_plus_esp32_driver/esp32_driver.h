@@ -17,8 +17,8 @@
 #include "myagv_plus_msgs/srv/set_led_mode.hpp"
 #include "myagv_plus_msgs/srv/query_device.hpp"
 
-#define SEND_DATA_SIZE 14                               // Total bytes in a command frame to ESP32(version>=V1.0.8)
-#define RECEIVE_FRAME_SIZE 31                           // Total bytes in a frame from ESP32(version>=V1.0.8)
+#define SEND_DATA_SIZE 14                               // Total bytes in a command frame to ESP32(myagv plus version=V1.0.3)
+#define RECEIVE_FRAME_SIZE 30                           // Total bytes in a frame from ESP32(myagv plus version=V1.0.3)
 #define RECEIVE_PAYLOAD_SIZE (RECEIVE_FRAME_SIZE - 3)   // Payload length (excluding header)
 
 #define GET_MODIFY_VERSION 0x01

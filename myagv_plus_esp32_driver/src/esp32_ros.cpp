@@ -329,24 +329,24 @@ bool MyAGV_Plus::readData()
     return false;
   }
 
-  battery_status = recv_buf[1];
-  imu_status     = recv_buf[2];
-  battery_rating = recv_buf[3];
-  battery_charging_status = recv_buf[4];
-  battery_voltage = static_cast<float>(recv_buf[5]) / 10.0f;
-  battery_backup_voltage = static_cast<float>(recv_buf[6]) / 10.0f;
+  battery_status = recv_buf[4];
+  imu_status     = recv_buf[5];
+  battery_rating = recv_buf[6];
+  battery_charging_status = recv_buf[7];
+  battery_voltage = static_cast<float>(recv_buf[8]) / 10.0f;
+  battery_backup_voltage = static_cast<float>(recv_buf[9]) / 10.0f;
 
-  imu_data.linear_acceleration.x = static_cast<double>(static_cast<int16_t>((recv_buf[7] << 8) | recv_buf[8])) * 0.01;
-  imu_data.linear_acceleration.y = static_cast<double>(static_cast<int16_t>((recv_buf[9] << 8) | recv_buf[10])) * 0.01;
-  imu_data.linear_acceleration.z = static_cast<double>(static_cast<int16_t>((recv_buf[11] << 8) | recv_buf[12])) * 0.01;
+  imu_data.linear_acceleration.x = static_cast<double>(static_cast<int16_t>((recv_buf[10] << 8) | recv_buf[11])) * 0.01;
+  imu_data.linear_acceleration.y = static_cast<double>(static_cast<int16_t>((recv_buf[12] << 8) | recv_buf[13])) * 0.01;
+  imu_data.linear_acceleration.z = static_cast<double>(static_cast<int16_t>((recv_buf[14] << 8) | recv_buf[15])) * 0.01;
 
-  imu_data.angular_velocity.x = static_cast<double>(static_cast<int16_t>((recv_buf[13] << 8) | recv_buf[14])) * 0.01;
-  imu_data.angular_velocity.y = static_cast<double>(static_cast<int16_t>((recv_buf[15] << 8) | recv_buf[16])) * 0.01;
-  imu_data.angular_velocity.z = static_cast<double>(static_cast<int16_t>((recv_buf[17] << 8) | recv_buf[18])) * 0.01;
+  imu_data.angular_velocity.x = static_cast<double>(static_cast<int16_t>((recv_buf[16] << 8) | recv_buf[17])) * 0.01;
+  imu_data.angular_velocity.y = static_cast<double>(static_cast<int16_t>((recv_buf[18] << 8) | recv_buf[19])) * 0.01;
+  imu_data.angular_velocity.z = static_cast<double>(static_cast<int16_t>((recv_buf[20] << 8) | recv_buf[21])) * 0.01;
 
-  roll  = static_cast<double>(static_cast<int16_t>((recv_buf[19] << 8) | recv_buf[20])) * 0.01;
-  pitch = static_cast<double>(static_cast<int16_t>((recv_buf[21] << 8) | recv_buf[22])) * 0.01;
-  yaw   = static_cast<double>(static_cast<int16_t>((recv_buf[23] << 8) | recv_buf[24])) * 0.01;
+  roll  = static_cast<double>(static_cast<int16_t>((recv_buf[22] << 8) | recv_buf[23])) * 0.01;
+  pitch = static_cast<double>(static_cast<int16_t>((recv_buf[24] << 8) | recv_buf[25])) * 0.01;
+  yaw   = static_cast<double>(static_cast<int16_t>((recv_buf[26] << 8) | recv_buf[27])) * 0.01;
 
   // RCLCPP_INFO(this->get_logger(),
   // "IMU Data - Accel[x: %.2f, y: %.2f, z: %.2f], "
@@ -470,10 +470,10 @@ MyAGV_Plus::MyAGV_Plus(std::string node_name):rclcpp::Node(node_name)
     serial_port_->set_option(boost::asio::serial_port_base::stop_bits(boost::asio::serial_port_base::stop_bits::one));
     serial_port_->set_option(boost::asio::serial_port_base::flow_control(boost::asio::serial_port_base::flow_control::none));
 
-    // int fd = serial_port_->native_handle();
-    // this->clearSerialBuffer(fd);
-    // this->disableDTR_RTS(fd);
-    // rclcpp::sleep_for(std::chrono::milliseconds(3000));//esp32 Restart time
+    int fd = serial_port_->native_handle();
+    this->clearSerialBuffer(fd);
+    this->disableDTR_RTS(fd);
+    rclcpp::sleep_for(std::chrono::milliseconds(3000));//esp32 Restart time
 
     RCLCPP_INFO(this->get_logger(), "Serial port initialized successfully");
     RCLCPP_INFO(this->get_logger(), "Using device: %s", device_name_.c_str());
