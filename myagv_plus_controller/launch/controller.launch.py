@@ -89,7 +89,8 @@ def generate_launch_description():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
-        parameters=[robot_description],
+        parameters=[robot_description,
+                    {"publish_frequency": 200.0}],
     )
 
     joint_state_broadcaster_spawner = Node(
