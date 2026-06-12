@@ -21,13 +21,21 @@
 #define RECEIVE_FRAME_SIZE 30                           // Total bytes in a frame from ESP32(myagv plus version=V1.0.3)
 #define RECEIVE_PAYLOAD_SIZE (RECEIVE_FRAME_SIZE - 3)   // Payload length (excluding header)
 
-#define GET_MODIFY_VERSION 0x01
-#define GET_SYSTEM_VERSION 0x02
-#define GET_ROBOT_STATUS 0x05
-#define SET_AUTO_REPORT_STATE 0x23
-#define GET_AUTO_REPORT 0x24
-#define SET_LED_COLOR 0x34
-#define SET_LED_MODE 0x3A
+enum class Esp32Cmd : uint8_t
+{
+  GET_MODIFY_VERSION      = 0x01,
+  GET_SYSTEM_VERSION      = 0x02,
+  GET_ROBOT_STATUS        = 0x05,
+  MOTOR_POWER_ON          = 0x10,
+  IS_MOTOR_POWERED        = 0x12,
+  SET_AUTO_REPORT_STATE   = 0x23,
+  GET_AUTO_REPORT         = 0x24,
+  SET_LED_COLOR           = 0x34,
+  SET_LED_MODE            = 0x3A,
+  SET_OUT_IO              = 0x40,
+  GET_IN_IO               = 0x41,
+  SET_FAN_STATE           = 0x42
+};
 
 class MyAGV_Plus : public rclcpp::Node
 {
@@ -82,14 +90,6 @@ private:
     std::optional<size_t> override_size = std::nullopt);
 
   /**
-   * @brief Send a serial frame to the AGV and optionally print it in hex.
-   *
-   * @param[in] frame The byte vector representing the serial frame to send.
-   * @param[in] debug If true, prints the transmitted frame using print_hex().
-   */
-  void send_serial_frame(const std::vector<uint8_t>& frame, bool debug);
-
-  /**
    * @brief Read a serial response from the AGV device, waiting for a specific header.
    *
    * This function reads bytes from the serial port until the expected header
@@ -114,6 +114,11 @@ private:
   void set_auto_report(bool enable);
 
   /**
+   * @brief Get esp32 version information
+   */
+  void get_eps32_version();
+
+  /**
    * @brief Clear the serial port input and output buffers
    * @param[in] fd File descriptor of the serial port
    */
@@ -132,6 +137,14 @@ private:
   bool readData();
 
   /**
+   * @brief Check if the given command ID is a valid ESP32 command.
+   *
+   * @param[in] cmd The command ID to validate.
+   * @return true if the command ID is valid; false otherwise.
+   */
+  bool isValidCommand(Esp32Cmd cmd);
+
+  /**
    * @brief Voltage publisher
    */
   void publisherVoltage();
@@ -141,8 +154,17 @@ private:
    */
   void publisherImuSensor();
 
-  std::vector<uint8_t> send_and_wait(
-    uint8_t cmd_id,
+  /**
+   * @brief Send a command and read for the response frame.
+   *
+   * @param[in] cmd_id Command ID.
+   * @param[in] payload Command payload.
+   * @param[in] resp_payload_size Expected response payload size.
+   * @param[in] timeout_sec Response timeout in seconds.
+   * @return Response frame received from the ESP32.
+   */
+  std::vector<uint8_t> send_and_read(
+    Esp32Cmd cmd_id,
     const std::vector<uint8_t>& payload,
     size_t resp_payload_size,
     double timeout_sec);
@@ -167,6 +189,8 @@ private:
   std::string frame_id_of_imu_;
   std::string name_space_;
   std::string device_name_;
+  
+  bool debug_mode_ = false;
 
   double ax= 0.0;
   double ay= 0.0;

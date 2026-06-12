@@ -35,39 +35,39 @@ std::vector<uint8_t> MyAGV_Plus::build_serial_frame(uint8_t cmd_id, const std::v
 
 void MyAGV_Plus::print_hex(const std::string& label, const std::vector<uint8_t>& data, std::optional<size_t> override_size) {
   std::stringstream ss;
-  for (auto b : data) {
+  for (size_t i =0; i < data.size(); ++i) {
     ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
-       << static_cast<int>(b) << " ";
+       << static_cast<int>(data[i]);
+    if (i != data.size() - 1) {
+      ss << " ";
+    }
   }
   size_t len = override_size.value_or(data.size());
   RCLCPP_INFO(this->get_logger(), "%s (%zu bytes): [%s]", label.c_str(), len, ss.str().c_str());
 }
 
-void MyAGV_Plus::send_serial_frame(const std::vector<uint8_t>& frame, bool debug)
-{
-  try {
-    size_t bytes_transmit_size = boost::asio::write(*serial_port_, boost::asio::buffer(frame));
-    if (debug) {
-      print_hex("Sent", frame, bytes_transmit_size);
-    }
-  } catch (const std::exception &ex) {
-    RCLCPP_ERROR(this->get_logger(), "Error Transmiting from serial port: %s", ex.what());
-  }
-}
-
-std::vector<uint8_t> MyAGV_Plus::send_and_wait(
-  uint8_t cmd_id,
+std::vector<uint8_t> MyAGV_Plus::send_and_read(
+  Esp32Cmd cmd_id,
   const std::vector<uint8_t>& payload,
   size_t resp_payload_size,
   double timeout_sec)
 {
-  auto frame = build_serial_frame(cmd_id, payload);
+  auto frame = build_serial_frame(static_cast<uint8_t>(cmd_id), payload);
 
-  send_serial_frame(frame, true);
+  size_t bytes_transmit_size = boost::asio::write(*serial_port_, boost::asio::buffer(frame));
+  if (debug_mode_) {
+    print_hex("Sent", frame, bytes_transmit_size);
+  }
 
-  const std::vector<uint8_t> header = {0xFE, 0xFE, 0x0B, cmd_id};
+  const std::vector<uint8_t> header = {0xFE, 0xFE, 0x0B, static_cast<uint8_t>(cmd_id)};
 
-  return read_serial_response(header, resp_payload_size, timeout_sec);
+  auto query_response = read_serial_response(header, resp_payload_size, timeout_sec);
+
+  if(debug_mode_) {
+    print_hex("Read", query_response);
+  }
+
+  return query_response;
 }
 
 std::vector<uint8_t> MyAGV_Plus::read_serial_response(
@@ -132,8 +132,21 @@ std::vector<uint8_t> MyAGV_Plus::read_serial_response(
 }
 
 void MyAGV_Plus::set_auto_report(bool enable){
-  auto frame = build_serial_frame(0x23, {static_cast<uint8_t>(enable)});
-  send_serial_frame(frame,true);
+  auto response_frame = send_and_read(Esp32Cmd::SET_AUTO_REPORT_STATE, {static_cast<uint8_t>(enable)}, 8, 5.0);
+}
+
+void MyAGV_Plus::get_eps32_version(){
+  auto response_frame = send_and_read(Esp32Cmd::GET_MODIFY_VERSION, {}, 8, 5.0);
+  uint8_t modify_version = response_frame[4];
+  
+  response_frame = send_and_read(Esp32Cmd::GET_SYSTEM_VERSION, {}, 8, 5.0);
+  uint8_t system_version = response_frame[4];
+
+  RCLCPP_INFO(this->get_logger(), 
+    "ESP32 Version: %u.%u.%u", 
+    system_version / 10, 
+    system_version % 10, 
+    modify_version);
 }
 
 void MyAGV_Plus::clearSerialBuffer(int fd) {
@@ -158,88 +171,26 @@ void MyAGV_Plus::disableDTR_RTS(int fd) {
   }
 }
 
-void MyAGV_Plus::handleSetLedColor(
-  const std::shared_ptr<myagv_plus_msgs::srv::SetLedColor::Request> request,
-  std::shared_ptr<myagv_plus_msgs::srv::SetLedColor::Response> response)
+bool MyAGV_Plus::isValidCommand(Esp32Cmd cmd)
 {
-  if (request->position < 0 || request->position > 1) {
-    RCLCPP_ERROR(this->get_logger(), "Invalid LED position: %d", request->position);
-    response->success = false;
-    response->message = "Invalid LED position";
-    return;
-  }
+  switch(cmd)
+  {
+    case Esp32Cmd::GET_MODIFY_VERSION:
+    case Esp32Cmd::GET_SYSTEM_VERSION:
+    case Esp32Cmd::GET_ROBOT_STATUS:
+    case Esp32Cmd::MOTOR_POWER_ON:
+    case Esp32Cmd::IS_MOTOR_POWERED:
+    case Esp32Cmd::SET_AUTO_REPORT_STATE:
+    case Esp32Cmd::GET_AUTO_REPORT:
+    case Esp32Cmd::SET_LED_COLOR:
+    case Esp32Cmd::SET_LED_MODE:
+    case Esp32Cmd::SET_OUT_IO:
+    case Esp32Cmd::GET_IN_IO:
+    case Esp32Cmd::SET_FAN_STATE:
+      return true;
 
-  if (request->brightness < 0 || request->brightness > 255) {
-    RCLCPP_ERROR(this->get_logger(), "Invalid brightness: %d", request->brightness);
-    response->success = false;
-    response->message = "Invalid brightness";
-    return;
-  }
-
-  if (request->r < 0 || request->r > 255 ||
-      request->g < 0 || request->g > 255 ||
-      request->b < 0 || request->b > 255) {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "Invalid RGB value: r=%d g=%d b=%d",
-      request->r, request->g, request->b
-    );
-    response->success = false;
-    response->message = "Invalid RGB value";
-    return;
-  }
-
-  uint8_t position   = static_cast<uint8_t>(request->position);
-  uint8_t brightness = static_cast<uint8_t>(request->brightness);
-  uint8_t r          = static_cast<uint8_t>(request->r);
-  uint8_t g          = static_cast<uint8_t>(request->g);
-  uint8_t b          = static_cast<uint8_t>(request->b);
-
-  auto response_frame = send_and_wait(SET_LED_COLOR, {position, brightness, r, g, b}, 8, 5.0);
-  
-  if (response_frame.empty()) {
-    RCLCPP_ERROR(this->get_logger(), "No response received for SetLedColor command");
-    response->success = false;
-    response->message = "No response received";
-    return;
-  }
-
-  uint8_t status = response_frame[4];
-  if (status == 0x01) {
-    RCLCPP_DEBUG(this->get_logger(), "SetLedColor succeeded");
-    response->success = true;
-    response->message = "Success";
-  } else {
-    RCLCPP_ERROR(this->get_logger(), "SetLedColor failed with status: 0x%02X", status);
-    response->success = false;
-    response->message = "Failed with status code";
-  }
-}
-
-void MyAGV_Plus::handleSetLedMode(
-  const std::shared_ptr<myagv_plus_msgs::srv::SetLedMode::Request> request,
-  std::shared_ptr<myagv_plus_msgs::srv::SetLedMode::Response> response)
-{
-  uint8_t mode = request->mode ? 0x01 : 0x00;
-
-  auto response_frame = send_and_wait(SET_LED_MODE, {mode}, 8, 5.0);
-
-  if (response_frame.empty()) {
-    RCLCPP_ERROR(this->get_logger(), "No response received for SetLedMode command");
-    response->success = false;
-    response->message = "No response received";
-    return;
-  }
-
-  uint8_t status = response_frame[4];
-  if (status == 0x01) {
-    RCLCPP_DEBUG(this->get_logger(), "SetLedMode succeeded");
-    response->success = true;
-    response->message = "Success";
-  } else {
-    RCLCPP_ERROR(this->get_logger(), "SetLedMode failed with status: 0x%02X", status);
-    response->success = false;
-    response->message = "Failed with status code";
+    default:
+      return false;
   }
 }
 
@@ -247,9 +198,19 @@ void MyAGV_Plus::handleQueryDevice(
   const std::shared_ptr<myagv_plus_msgs::srv::QueryDevice::Request> request,
   std::shared_ptr<myagv_plus_msgs::srv::QueryDevice::Response> response)
 {
-  uint8_t cmd = request->cmd_id;
+  Esp32Cmd cmd = static_cast<Esp32Cmd>(request->cmd_id);
 
-  auto resp = send_and_wait(cmd, {}, 8, 3.0);
+  if (!isValidCommand(cmd))
+  {
+    RCLCPP_WARN(this->get_logger(),
+    "Unsupported ESP32 command: 0x%02X",
+    request->cmd_id);
+
+    response->success = false;
+    return;
+  }
+
+  auto resp = send_and_read(cmd, request->payload, 8, 3.0);
 
   if (resp.empty()) {
     response->success = false;
@@ -313,8 +274,10 @@ bool MyAGV_Plus::readData()
   recv_buf.push_back(0xFE);
   recv_buf.push_back(data_buf.size());
   recv_buf.insert(recv_buf.end(), data_buf.begin(), data_buf.end());
-  
-  // print_hex("recv_buf", recv_buf); //debug
+
+  // if(debug_mode_) {
+  //   print_hex("Read", recv_buf); //debug
+  // }
 
   if (recv_buf[3] != 0x25) {
     //RCLCPP_WARN(this->get_logger(), "Command error:0x%02X", recv_buf[2]); //debug
@@ -417,7 +380,7 @@ void MyAGV_Plus::Control()
     // }
 
     lastTime = currentTime;
-    // RCLCPP_INFO(this->get_logger(), "dt:%f", dt);
+    // RCLCPP_DEBUG(this->get_logger(), "dt:%f", dt);
     publisherVoltage();
     publisherImuSensor();
   }
@@ -430,10 +393,12 @@ MyAGV_Plus::MyAGV_Plus(std::string node_name):rclcpp::Node(node_name)
   this->declare_parameter<std::string>("odometry.child_frame_id", "base_footprint");
   this->declare_parameter<std::string>("imu.frame_id", "imu_link");
   this->declare_parameter<std::string>("namespace", "");
+  this->declare_parameter<bool>("debug_mode", false);
 
   this->get_parameter_or<std::string>("port_name",device_name_,std::string("/dev/myagv_plus_esp32"));
   this->get_parameter_or<std::string>("imu.frame_id",frame_id_of_imu_,std::string("imu_link"));        
   this->get_parameter_or<std::string>("namespace",name_space_,std::string(""));
+  this->get_parameter_or<bool>("debug_mode", debug_mode_, false);
 
   if (name_space_ != "") {
     frame_id_of_imu_ = name_space_ + "/" + frame_id_of_imu_;
@@ -442,16 +407,6 @@ MyAGV_Plus::MyAGV_Plus(std::string node_name):rclcpp::Node(node_name)
   pub_imu =  this->create_publisher<sensor_msgs::msg::Imu>("imu", 20);
   pub_voltage = create_publisher<std_msgs::msg::Float32>("voltage", 10);
   pub_voltage_backup = create_publisher<std_msgs::msg::Float32>("voltage_backup", 10);
-
-  set_led_service = this->create_service<myagv_plus_msgs::srv::SetLedColor>(
-    "set_led_color",
-    std::bind(&MyAGV_Plus::handleSetLedColor, this, std::placeholders::_1, std::placeholders::_2)
-  );
-
-  set_led_mode_service = this->create_service<myagv_plus_msgs::srv::SetLedMode>(
-    "set_led_mode",
-    std::bind(&MyAGV_Plus::handleSetLedMode, this, std::placeholders::_1, std::placeholders::_2)
-  );
 
   query_service_ = this->create_service<myagv_plus_msgs::srv::QueryDevice>(
     "query_device",
@@ -488,6 +443,7 @@ MyAGV_Plus::MyAGV_Plus(std::string node_name):rclcpp::Node(node_name)
     return;
   }
 
+  this->get_eps32_version();
   this->set_auto_report(1);
 
   control_timer_ = this->create_wall_timer(
@@ -503,5 +459,5 @@ MyAGV_Plus::~MyAGV_Plus()
     this->set_auto_report(0);
     serial_port_->cancel();
     serial_port_->close();
-  } 
+  }
 }

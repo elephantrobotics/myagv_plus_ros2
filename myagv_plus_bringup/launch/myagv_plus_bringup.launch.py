@@ -22,8 +22,14 @@ def generate_launch_description():
 
     declare_enable_esp32 = DeclareLaunchArgument(
         "enable_esp32",
-        default_value="false",
+        default_value="true",
         description="Enable ESP32 driver node"
+    )
+
+    declare_esp32_debug_mode = DeclareLaunchArgument(
+        "debug",
+        default_value="false",
+        description="Enable debug mode for ESP32 driver (logs sent and received frames)"
     )
 
     declare_enable_csi_camera = DeclareLaunchArgument(
@@ -51,6 +57,9 @@ def generate_launch_description():
         executable="esp32_node",
         name="esp32_node",
         output="screen",
+        parameters=[{
+            "debug_mode": LaunchConfiguration("debug")
+        }],
         condition=IfCondition(enable_esp32),
     )
 
@@ -76,6 +85,7 @@ def generate_launch_description():
         declare_namespace,
         declare_enable_esp32,
         declare_enable_csi_camera,
+        declare_esp32_debug_mode,
 
         PushRosNamespace(namespace),
 
