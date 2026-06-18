@@ -26,14 +26,6 @@ ComputeAndTrackRouteAction::ComputeAndTrackRouteAction(
   const BT::NodeConfiguration & conf)
 : BtActionNode<Action>(xml_tag_name, action_name, conf)
 {
-  nav_msgs::msg::Path empty_path;
-  nav2_msgs::msg::Route empty_route;
-  feedback_.last_node_id = 0;
-  feedback_.next_node_id = 0;
-  feedback_.current_edge_id = 0;
-  feedback_.route = empty_route;
-  feedback_.path = empty_path;
-  feedback_.rerouted = false;
 }
 
 void ComputeAndTrackRouteAction::on_tick()
@@ -60,28 +52,37 @@ void ComputeAndTrackRouteAction::on_tick()
 
 BT::NodeStatus ComputeAndTrackRouteAction::on_success()
 {
-  resetFeedbackAndOutputPorts();
   setOutput("execution_duration", result_.result->execution_duration);
+  setOutput("error_code_id", ActionResult::NONE);
+  setOutput("error_msg", "");
   return BT::NodeStatus::SUCCESS;
 }
 
 BT::NodeStatus ComputeAndTrackRouteAction::on_aborted()
 {
-  resetFeedbackAndOutputPorts();
   setOutput("execution_duration", builtin_interfaces::msg::Duration());
+  setOutput("error_code_id", result_.result->error_code);
+  setOutput("error_msg", result_.result->error_msg);
   return BT::NodeStatus::FAILURE;
 }
 
 BT::NodeStatus ComputeAndTrackRouteAction::on_cancelled()
 {
-  resetFeedbackAndOutputPorts();
   // Set empty error code, action was cancelled
   setOutput("execution_duration", builtin_interfaces::msg::Duration());
+  setOutput("error_code_id", ActionResult::NONE);
+  setOutput("error_msg", "");
   return BT::NodeStatus::SUCCESS;
 }
 
+void ComputeAndTrackRouteAction::on_timeout()
+{
+  setOutput("error_code_id", ActionResult::TIMEOUT);
+  setOutput("error_msg", "Behavior Tree action client timed out waiting.");
+}
+
 void ComputeAndTrackRouteAction::on_wait_for_result(
-  std::shared_ptr<const Action::Feedback> feedback)
+  std::shared_ptr<const Action::Feedback>/*feedback*/)
 {
   // Check for request updates to the goal
   bool use_poses = false, use_start = false;
@@ -128,39 +129,11 @@ void ComputeAndTrackRouteAction::on_wait_for_result(
   if (goal_updated_) {
     on_tick();
   }
-
-  if (feedback) {
-    feedback_ = *feedback;
-    setOutput("last_node_id", feedback_.last_node_id);
-    setOutput("next_node_id", feedback_.next_node_id);
-    setOutput("current_edge_id", feedback_.current_edge_id);
-    setOutput("route", feedback_.route);
-    setOutput("path", feedback_.path);
-    setOutput("rerouted", feedback_.rerouted);
-  }
-}
-
-void ComputeAndTrackRouteAction::resetFeedbackAndOutputPorts()
-{
-  nav_msgs::msg::Path empty_path;
-  nav2_msgs::msg::Route empty_route;
-  feedback_.last_node_id = 0;
-  feedback_.next_node_id = 0;
-  feedback_.current_edge_id = 0;
-  feedback_.route = empty_route;
-  feedback_.path = empty_path;
-  feedback_.rerouted = false;
-  setOutput("last_node_id", feedback_.last_node_id);
-  setOutput("next_node_id", feedback_.next_node_id);
-  setOutput("current_edge_id", feedback_.current_edge_id);
-  setOutput("route", feedback_.route);
-  setOutput("path", feedback_.path);
-  setOutput("rerouted", feedback_.rerouted);
 }
 
 }  // namespace nav2_behavior_tree
 
-#include "behaviortree_cpp_v3/bt_factory.h"
+#include "behaviortree_cpp/bt_factory.h"
 BT_REGISTER_NODES(factory)
 {
   BT::NodeBuilder builder =

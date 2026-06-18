@@ -96,6 +96,7 @@ ARG OVERLAY_WS
 ENV OVERLAY_WS $OVERLAY_WS
 WORKDIR $OVERLAY_WS
 COPY --from=cacher /tmp/$OVERLAY_WS ./
+
 RUN . $UNDERLAY_WS/install/setup.sh && \
     apt-get update && rosdep install -q -y \
       --from-paths src \
@@ -167,9 +168,7 @@ RUN mkdir -p $ROOT_SRV
 
 # install demo dependencies
 RUN apt-get update && apt-get install -y \
-      ros-$ROS_DISTRO-aws-robomaker-small-warehouse-world \
-      ros-$ROS_DISTRO-rviz2 \
-      ros-$ROS_DISTRO-turtlebot3-simulations
+      ros-$ROS_DISTRO-rviz2
 
 # install gzweb dependacies
 RUN apt-get install -y --no-install-recommends \
@@ -219,7 +218,7 @@ COPY --from=caddyer /usr/bin/caddy /usr/bin/caddy
 
 # download media files
 RUN mkdir -p $ROOT_SRV/media && cd /tmp && \
-    export ICONS="icons.tar.gz" && wget https://github.com/ros-navigation/navigation2/files/11506823/$ICONS && \
+    export ICONS="icons.tar.gz" && wget https://github.com/ros-planning/navigation2/files/11506823/$ICONS && \
     echo "cae5e2a5230f87b004c8232b579781edb4a72a7431405381403c6f9e9f5f7d41 $ICONS" | sha256sum -c && \
     tar xvz -C $ROOT_SRV/media -f $ICONS && rm $ICONS
 

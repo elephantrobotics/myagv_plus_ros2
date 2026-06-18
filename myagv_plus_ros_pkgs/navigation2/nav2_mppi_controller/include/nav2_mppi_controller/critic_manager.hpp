@@ -19,10 +19,10 @@
 #include <string>
 #include <vector>
 #include <pluginlib/class_loader.hpp>
-#include <xtensor/xtensor.hpp>
 
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "nav2_msgs/msg/critics_stats.hpp"
 
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -42,10 +42,12 @@ namespace mppi
 class CriticManager
 {
 public:
+  typedef std::vector<std::unique_ptr<critics::CriticFunction>> Critics;
   /**
     * @brief Constructor for mppi::CriticManager
     */
   CriticManager() = default;
+
 
   /**
     * @brief Virtual Destructor for mppi::CriticManager
@@ -93,7 +95,12 @@ protected:
   ParametersHandler * parameters_handler_;
   std::vector<std::string> critic_names_;
   std::unique_ptr<pluginlib::ClassLoader<critics::CriticFunction>> loader_;
-  std::vector<std::unique_ptr<critics::CriticFunction>> critics_;
+  Critics critics_;
+
+  rclcpp_lifecycle::LifecyclePublisher<nav2_msgs::msg::CriticsStats>::SharedPtr
+    critics_effect_pub_;
+
+  bool publish_critics_stats_;
 
   rclcpp::Logger logger_{rclcpp::get_logger("MPPIController")};
 };

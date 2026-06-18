@@ -25,14 +25,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "pluginlib/class_list_macros.hpp"
-#include "nav2_util/geometry_utils.hpp"
-#include "nav2_util/robot_utils.hpp"
 #include "nav2_core/controller.hpp"
-#include "nav2_core/exceptions.hpp"
-#include "nav2_util/node_utils.hpp"
+#include "nav2_core/controller_exceptions.hpp"
 #include "nav2_costmap_2d/footprint_collision_checker.hpp"
-#include "nav2_controller/plugins/position_goal_checker.hpp"
-#include "angles/angles.h"
 
 namespace nav2_rotation_shim_controller
 {
@@ -108,6 +103,11 @@ public:
    */
   void setSpeedLimit(const double & speed_limit, const bool & percentage) override;
 
+  /**
+   * @brief Reset the state of the controller
+   */
+  void reset() override;
+
 protected:
   /**
    * @brief Finds the point on the path that is roughly the sampling
@@ -155,6 +155,13 @@ protected:
     const geometry_msgs::msg::PoseStamped & pose);
 
   /**
+   * @brief Checks if the goal has changed based on the given path.
+   * @param path The path to compare with the current goal.
+   * @return True if the goal has changed, false otherwise.
+   */
+  bool isGoalChanged(const nav_msgs::msg::Path & path);
+
+  /**
    * @brief Callback executed when a parameter change is detected
    * @param event ParameterEvent message
    */
@@ -177,14 +184,14 @@ protected:
   double forward_sampling_distance_, angular_dist_threshold_, angular_disengage_threshold_;
   double rotate_to_heading_angular_vel_, max_angular_accel_;
   double control_duration_, simulate_ahead_time_;
-  bool rotate_to_goal_heading_, in_rotation_;
+  bool rotate_to_goal_heading_, in_rotation_, rotate_to_heading_once_;
   bool closed_loop_;
+  bool use_path_orientations_;
   double last_angular_vel_ = std::numeric_limits<double>::max();
 
   // Dynamic parameters handler
   std::mutex mutex_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;
-  std::unique_ptr<nav2_controller::PositionGoalChecker> position_goal_checker_;
 };
 
 }  // namespace nav2_rotation_shim_controller

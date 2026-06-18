@@ -86,7 +86,7 @@ inline visualization_msgs::msg::MarkerArray toMsg(
       c_msg.r = 0.0;
       c_msg.g = 1.0;
       c_msg.b = 0.0;
-      c_msg.a = 0.5;  // So bi-directional connections stand out overlapping
+      c_msg.a = 0.65;  // So bi-directional connections stand out overlapping
       return c_msg;
     };
 
@@ -125,7 +125,8 @@ inline visualization_msgs::msg::MarkerArray toMsg(
       curr_marker.points[0].y = graph[i].coords.y;
       curr_marker.points[1].x = graph[i].neighbors[j].end->coords.x;
       curr_marker.points[1].y = graph[i].neighbors[j].end->coords.y;
-      curr_marker.scale.x = 0.03;
+      curr_marker.scale.x = 0.05;
+      // curr_marker.scale.x = 0.03;
       curr_marker.color = getLineColor();
       msg.markers.push_back(curr_marker);
       curr_marker.points.clear();  // Reset for next node marker
@@ -150,7 +151,8 @@ inline visualization_msgs::msg::MarkerArray toMsg(
         graph[i].coords.y + ((graph[i].neighbors[j].end->coords.y - graph[i].coords.y) / 2.0) +
         y_offset;
       curr_marker.text = std::to_string(graph[i].neighbors[j].edgeid);
-      curr_marker.scale.z = 0.1;
+      curr_marker.scale.z = 0.2;
+      // curr_marker.scale.z = 0.1;
       msg.markers.push_back(curr_marker);
     }
   }
