@@ -82,7 +82,12 @@ public:
   void setCostmap(nav2_msgs::msg::Costmap::SharedPtr msg)
   {
     costmap_msg_ = msg;
-    costmap_received_ = true;
+    costmap_ = std::make_shared<nav2_costmap_2d::Costmap2D>(
+      msg->metadata.size_x, msg->metadata.size_y,
+      msg->metadata.resolution, msg->metadata.origin.position.x,
+      msg->metadata.origin.position.y);
+
+    processCurrentCostmapMsg();
   }
 };
 
@@ -373,7 +378,7 @@ protected:
   {
     auto output = input;
     for (size_t i = 1; i < input.size() - 1; i++) {
-      // add offset prependicular to path
+      // add offset perpendicular to path
       Eigen::Vector2d direction =
         (input[i + 1].block<2, 1>(0, 0) - input[i - 1].block<2, 1>(0, 0)).normalized();
       output[i].block<2, 1>(

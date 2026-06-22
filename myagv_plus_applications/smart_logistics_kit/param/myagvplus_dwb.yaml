@@ -1,0 +1,458 @@
+amcl:
+  ros__parameters:
+    use_sim_time: False
+    # 里程计旋转噪声 alpha1 / Odometry rotation noise alpha1, 调整 AMCL 对旋转里程计误差的信任度 / adjusts AMCL trust in rotational odometry error
+    alpha1: 0.4  # 初始值 / Initial value: 0.2
+    # 里程计平移引起旋转噪声 alpha2 / Rotation noise from translation alpha2, 调整平移运动对航向估计的影响 / adjusts translation effect on heading estimation
+    alpha2: 0.3  # 初始值 / Initial value: 0.2
+    # 里程计平移噪声 alpha3 / Odometry translation noise alpha3, 调整 AMCL 对平移里程计误差的信任度 / adjusts AMCL trust in translational odometry error
+    alpha3: 0.1  # 初始值 / Initial value: 0.2
+    # 里程计旋转引起平移噪声 alpha4 / Translation noise from rotation alpha4, 调整旋转运动对位置估计的影响 / adjusts rotation effect on position estimation
+    alpha4: 0.1  # 初始值 / Initial value: 0.2
+    # 全向运动模型侧向噪声 alpha5 / Omni-model lateral noise alpha5, 保留低侧向噪声以适配当前定位模型 / keeps low lateral noise for the current localization model
+    alpha5: 0.04  # 初始值 / Initial value: 0.2
+    base_frame_id: "base_footprint"
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    do_beamskip: false
+    global_frame_id: "map"
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+    # 激光匹配最大有效距离 / Maximum valid laser matching range, 限制远距离无效数据对粒子权重的影响 / limits distant invalid data impact on particle weights
+    laser_max_range: 10.0  # 初始值 / Initial value: not set
+    # 激光匹配最小有效距离 / Minimum valid laser matching range, 过滤雷达近距离盲区数据 / filters lidar near-field blind-zone data
+    laser_min_range: 0.2  # 初始值 / Initial value: -1.0
+    laser_model_type: "likelihood_field"
+    # 每次定位更新采样的激光束数量 / Number of laser beams sampled per localization update, 增加定位匹配所使用的观测信息 / increases observation information used for localization matching
+    max_beams: 90  # 初始值 / Initial value: laser_max_beams=100
+    max_particles: 2000
+    min_particles: 500
+    odom_frame_id: "odom"
+    pf_err: 0.05
+    pf_z: 0.99
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    resample_interval: 1
+    robot_model_type: "nav2_amcl::OmniMotionModel"
+    save_pose_rate: 0.5
+    # 激光命中模型标准差 / Laser hit model standard deviation, 调节激光观测偏差对粒子权重的敏感程度 / adjusts particle-weight sensitivity to laser observation error
+    sigma_hit: 0.04  # 初始值 / Initial value: laser_sigma_hit=0.2
+    tf_broadcast: true
+    # TF 变换容忍时间 / TF transform tolerance, 降低定位 TF 外推等待窗口以减少延迟 / reduces localization TF extrapolation wait window
+    transform_tolerance: 0.3  # 初始值 / Initial value: 1.0 s
+    # 触发定位更新的最小旋转角度 / Minimum rotation angle triggering localization update, 提高小角度旋转时的定位更新频率 / increases localization update frequency during small rotations
+    update_min_a: 0.04  # 初始值 / Initial value: 0.2 rad
+    # 触发定位更新的最小平移距离 / Minimum translation distance triggering localization update, 提高低速平移时的定位更新频率 / increases localization update frequency during slow translation
+    update_min_d: 0.015  # 初始值 / Initial value: 0.25 m
+    z_hit: 0.7
+    z_max: 0.001
+    z_rand: 0.059
+    z_short: 0.24
+    # 是否由 AMCL 自动发布初始位姿 / Whether AMCL publishes initial pose automatically, 关闭自动初始位姿以避免覆盖人工定位 / disables automatic initial pose to avoid overriding manual localization
+    set_initial_pose: False  # 初始值 / Initial value: not set
+    initial_pose.x: 0.0
+    initial_pose.y: 0.0
+    initial_pose.z: 0.0
+    initial_pose.yaw: 0.0
+
+amcl_map_client:
+  ros__parameters:
+    use_sim_time: False
+
+amcl_rclcpp_node:
+  ros__parameters:
+    use_sim_time: False
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: odom
+    bt_loop_duration: 10
+    filter_duration: 0.3
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    service_introspection_mode: "disabled"
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+      enable_groot_monitoring: false
+      groot_server_port: 1667
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+      enable_groot_monitoring: false
+      groot_server_port: 1669
+    error_code_name_prefixes:
+      - assisted_teleop
+      - backup
+      - compute_path
+      - dock_robot
+      - drive_on_heading
+      - follow_path
+      - nav_thru_poses
+      - nav_to_pose
+      - route
+      - spin
+      - smoother
+      - undock_robot
+      - wait
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    costmap_update_timeout: 0.30
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    controller_plugins: ["FollowPath"]
+    use_realtime_priority: false
+    speed_limit_topic: "speed_limit"
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.10
+      # 判定导航无进展的等待时间 / Time allowance before declaring no progress, 缩短失败检测时间避免长时间卡住 / shortens failure detection time to avoid long stalls
+      movement_time_allowance: 10.0  # 初始值 / Initial value: 30.0 s
+
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      # 到达目标的位置容差 / Goal position tolerance, 提高点到点与末端位姿到达精度 / improves point-to-point and final-pose arrival accuracy
+      xy_goal_tolerance: 0.05  # 初始值 / Initial value: 0.25 m
+      # 到达目标的航向角容差 / Goal heading tolerance, 放宽普通导航末端角度以交给后续精校或二维码对齐处理 / relaxes final heading for later refinement or marker alignment
+      yaw_goal_tolerance: 0.55  # 初始值 / Initial value: 0.25 rad
+
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: True
+      prune_distance: 2.0
+      forward_prune_distance: 2.0
+      min_vel_x: -0.01
+      min_vel_y: 0.0
+      max_vel_x: 0.26
+      max_vel_y: 0.0
+      # DWB 最大角速度 / DWB maximum angular velocity, 提高调头和路径对向能力 / improves turning and path heading alignment
+      max_vel_theta: 1.0  # 初始值 / Initial value: 0.5
+      # DWB 最小平移速度 / DWB minimum translational speed, 避免输出过小速度导致底盘和里程计无明显响应 / avoids tiny commands with little chassis or odometry response
+      min_speed_xy: 0.03  # 初始值 / Initial value: 0.0
+      max_speed_xy: 0.26
+      # DWB 最小角速度 / DWB minimum angular speed, 避免极小角速度导致原地调头卡住 / avoids tiny angular commands causing stuck turns
+      min_speed_theta: 0.1  # 初始值 / Initial value: 0.0
+      acc_lim_x: 2.5
+      acc_lim_y: 0.0
+      # DWB 角加速度上限 / DWB angular acceleration limit, 提高旋转响应速度 / improves rotational response
+      acc_lim_theta: 3.2  # 初始值 / Initial value: 2.5
+      decel_lim_x: -2.5
+      decel_lim_y: 0.0
+      # DWB 角减速度上限 / DWB angular deceleration limit, 同步提高旋转制动能力 / improves rotational braking consistently
+      decel_lim_theta: -3.2  # 初始值 / Initial value: -2.5
+      vx_samples: 20
+      vy_samples: 5
+      vtheta_samples: 40
+      sim_time: 1.7
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      transform_tolerance: 0.1
+      # DWB 进入目标姿态调整模式的位置容差 / Position tolerance for DWB goal-orientation adjustment mode, 控制路径跟踪切换到末端旋转控制的距离窗口 / controls switch from path tracking to final rotation control
+      xy_goal_tolerance: 0.03  # 初始值 / Initial value: 0.25 m
+      # 判定平移停止的速度阈值 / Velocity threshold for considering translation stopped, 控制进入仅旋转控制前的平移停止条件 / controls translation-stop condition before rotate-only control
+      trans_stopped_velocity: 0.01  # 初始值 / Initial value: 0.1 m/s
+      short_circuit_trajectory_evaluation: True
+      stateful: True
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      BaseObstacle.scale: 0.02
+      PathAlign.scale: 23.0
+      PathAlign.forward_point_distance: 0.1
+      GoalAlign.scale: 18.0
+      GoalAlign.forward_point_distance: 0.1
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_footprint
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      footprint: "[[0.18, 0.12], [0.18,-0.12], [-0.18, -0.12], [-0.18, 0.12]]"
+      plugins: ["voxel_layer", "inflation_layer"]
+      filters: ["keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: false
+        filter_info_topic: "keepout_costmap_filter_info"
+        override_lethal_cost: True
+        lethal_override_cost: 200
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.25
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        publish_voxel_map: True
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        map_subscribe_transient_local: True
+      always_send_full_costmap: True
+      service_introspection_mode: "disabled"
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_footprint
+      use_sim_time: False
+      footprint: "[[0.17, 0.12], [0.17,-0.12], [-0.17, -0.12], [-0.17, 0.12]]"
+      resolution: 0.05
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      filters: ["keepout_filter", "speed_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: false
+        filter_info_topic: "keepout_costmap_filter_info"
+        override_lethal_cost: True
+        lethal_override_cost: 200
+      speed_filter:
+        plugin: "nav2_costmap_2d::SpeedFilter"
+        enabled: false
+        filter_info_topic: "speed_costmap_filter_info"
+        speed_limit_topic: "speed_limit"
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.25
+      always_send_full_costmap: True
+      service_introspection_mode: "disabled"
+
+map_server:
+  ros__parameters:
+    service_introspection_mode: "disabled"
+
+keepout_filter_mask_server:
+  ros__parameters:
+    topic_name: "keepout_filter_mask"
+    # yaml_filename: ""
+
+keepout_costmap_filter_info_server:
+  ros__parameters:
+    type: 0
+    filter_info_topic: "keepout_costmap_filter_info"
+    mask_topic: "keepout_filter_mask"
+    base: 0.0
+    multiplier: 1.0
+
+speed_filter_mask_server:
+  ros__parameters:
+    topic_name: "speed_filter_mask"
+    # yaml_filename: ""
+
+speed_costmap_filter_info_server:
+  ros__parameters:
+    type: 1
+    filter_info_topic: "speed_costmap_filter_info"
+    mask_topic: "speed_filter_mask"
+    base: 100.0
+    multiplier: -1.0
+
+map_saver:
+  ros__parameters:
+    use_sim_time: False
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: True
+    service_introspection_mode: "disabled"
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    costmap_update_timeout: 1.0
+    service_introspection_mode: "disabled"
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.05
+      use_astar: false
+      allow_unknown: true
+
+smoother_server:
+  ros__parameters:
+    smoother_plugins: ["simple_smoother", "route_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      refinement_num: 2
+      # True for Hybrid A* or State Lattice to not smooth over directional changes
+      enforce_path_inversion: True
+      do_refinement: True
+    route_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      refinement_num: 5
+      # False for Route Server or others where smoothing out sharp corners is OK
+      enforce_path_inversion: False
+      do_refinement: True
+
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins:
+      ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+      acceleration_limit: 2.5
+      deceleration_limit: -2.5
+      minimum_speed: 0.10
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+      acceleration_limit: 2.5
+      deceleration_limit: -2.5
+      minimum_speed: 0.10
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors::AssistedTeleop"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_footprint
+    transform_timeout: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+waypoint_follower:
+  ros__parameters:
+    loop_rate: 20
+    stop_on_failure: false
+    service_introspection_mode: "disabled"
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"   
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200
+
+route_server:
+  ros__parameters:
+    # 路网起点/终点达成半径 / Route boundary node achievement radius, 收紧起终点节点判定避免过早跳点 / tightens start and goal node achievement to avoid early node switching
+    boundary_radius_to_achieve_node: 0.25  # 初始值 / Initial value: 1.0 m
+    # 路网中间节点达成半径 / Route intermediate node achievement radius, 收紧中间节点判定以提高按路网行驶约束 / tightens intermediate node achievement for stricter route following
+    radius_to_achieve_node: 0.35  # 初始值 / Initial value: 2.0 m
+    smooth_corners: true
+    operations: ["AdjustSpeedLimit", "ReroutingService", "CollisionMonitor"]
+    ReroutingService:
+      plugin: "nav2_route::ReroutingService"
+    AdjustSpeedLimit:
+      plugin: "nav2_route::AdjustSpeedLimit"
+    CollisionMonitor:
+      plugin: "nav2_route::CollisionMonitor"
+      max_collision_dist: 3.0
+    edge_cost_functions: ["DistanceScorer", "CostmapScorer"]
+    DistanceScorer:
+      plugin: "nav2_route::DistanceScorer"
+    CostmapScorer:
+      plugin: "nav2_route::CostmapScorer"
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: False
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    max_velocity: [0.26, 0.0, 0.5]
+    min_velocity: [-0.26, 0.0, -0.5]
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+collision_monitor:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "cmd_vel"
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+    # Polygons represent zone around the robot for "stop", "slowdown" and "limit" action types,
+    # and robot footprint for "approach" action type.
+    polygons: ["FootprintApproach"]
+    FootprintApproach:
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "local_costmap/published_footprint"
+      time_before_collision: 1.2
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: False
+      enabled: True
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      min_height: 0.15
+      max_height: 2.0
+      enabled: True

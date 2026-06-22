@@ -30,7 +30,6 @@ void GoalIntentExtractor::configure(
   std::shared_ptr<tf2_ros::Buffer> tf,
   std::shared_ptr<nav2_costmap_2d::CostmapSubscriber> costmap_subscriber,
   const std::string & route_frame,
-  const std::string & global_frame,
   const std::string & base_frame)
 {
   logger_ = node->get_logger();
@@ -39,7 +38,6 @@ void GoalIntentExtractor::configure(
   tf_ = tf;
   costmap_subscriber_ = costmap_subscriber;
   route_frame_ = route_frame;
-  global_frame_ = global_frame;
   base_frame_ = base_frame;
   node_spatial_tree_ = std::make_shared<NodeSpatialTree>();
   node_spatial_tree_->computeTree(graph);
@@ -157,7 +155,7 @@ GoalIntentExtractor::findStartandGoal(const std::shared_ptr<const GoalT> goal)
   if (enable_search) {
     try {
       costmap = costmap_subscriber_->getCostmap();
-      costmap_frame_id = global_frame_;
+      costmap_frame_id = costmap_subscriber_->getFrameID();
     } catch (const std::exception & ex) {
       enable_search = false;
       RCLCPP_WARN(
@@ -183,7 +181,7 @@ GoalIntentExtractor::findStartandGoal(const std::shared_ptr<const GoalT> goal)
     auto transformed_start = transformPose(start_, costmap_frame_id);
     GoalIntentSearch::LoSCollisionChecker los_checker(costmap);
     if (los_checker.worldToMap(
-        candidate_nodes.front().pose.position, transformed_start.pose.position))
+      candidate_nodes.front().pose.position, transformed_start.pose.position))
     {
       if (los_checker.isInCollision()) {
         GoalIntentSearch::BreadthFirstSearch bfs(costmap);
@@ -210,7 +208,7 @@ GoalIntentExtractor::findStartandGoal(const std::shared_ptr<const GoalT> goal)
     auto transformed_end = transformPose(goal_, costmap_frame_id);
     GoalIntentSearch::LoSCollisionChecker los_checker(costmap);
     if (los_checker.worldToMap(
-        candidate_nodes.front().pose.position, transformed_end.pose.position))
+      candidate_nodes.front().pose.position, transformed_end.pose.position))
     {
       if (los_checker.isInCollision()) {
         GoalIntentSearch::BreadthFirstSearch bfs(costmap);
