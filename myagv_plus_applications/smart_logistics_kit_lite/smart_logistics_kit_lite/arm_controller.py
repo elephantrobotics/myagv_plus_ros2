@@ -6,12 +6,14 @@ import numpy as np
 import time
 from pymycobot import MechArm270
 from smart_logistics_kit_lite.QRCodeScanner import QRCodeScanner
+from smart_logistics_kit_lite.bottom_io import PumpClient
 
 class MechArm270Control(Node):
-    def __init__(self,port='/dev/ttyACM1',baudrate=115200):
-        self.mc = MechArm270(port, baudrate) 
+    def __init__(self,port='/dev/ttyACM1',baudrate=115200,io_client=None):
+        self.mc = MechArm270(port, baudrate)
         self.mc.set_fresh_mode(0)
-        
+        self.io = io_client if io_client is not None else PumpClient()
+
         self.scanner = QRCodeScanner("/dev/video1")
 
         self.angle_table = {
@@ -27,14 +29,10 @@ class MechArm270Control(Node):
         }
 
     def pump_on(self):
-        self.mc.set_basic_output(2, 0)
-        self.mc.set_basic_output(5, 1)
+        self.io.set_pump_state(1)
 
     def pump_off(self):
-        self.mc.set_basic_output(2, 1)
-        self.mc.set_basic_output(5, 0)
-        time.sleep(0.05)
-        self.mc.set_basic_output(2, 1)
+        self.io.set_pump_state(0)
 
     def move_angles(self, angles, speed=50):
         self.mc.send_angles(angles, speed)

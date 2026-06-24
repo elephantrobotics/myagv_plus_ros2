@@ -311,6 +311,7 @@ class ArmPickTester:
         pick_z_tolerance=PICK_Z_TOLERANCE,
         pick_reach_timeout=PICK_REACH_TIMEOUT,
         qr_show_window=ORIGINAL_PICK_QR_SHOW_WINDOW,
+        io_client=None,
     ):
         try:
             from arm_controller import MechArm270Control
@@ -328,6 +329,7 @@ class ArmPickTester:
             qr_camera=CAMERA_DEVICE,
             qr_timeout=STABLE_TIMEOUT,
             qr_show_window=qr_show_window,
+            io_client=io_client,
         )
         self.arm.angle_table.update(
             {name: list(angles) for name, angles in ANGLE_TABLE.items()}
@@ -461,7 +463,7 @@ class ArmPickTester:
             return qr_texts
 
 
-def run_live_pick_test():
+def run_live_pick_test(io_client):
     arm = ArmPickTester(
         port=ARM_PORT,
         baudrate=ARM_BAUDRATE,
@@ -470,6 +472,7 @@ def run_live_pick_test():
         pick_z_tolerance=PICK_Z_TOLERANCE,
         pick_reach_timeout=PICK_REACH_TIMEOUT,
         qr_show_window=ORIGINAL_PICK_QR_SHOW_WINDOW,
+        io_client=io_client,
     )
     object_points = make_object_points(DEFAULT_QR_SIZE_M)
 
@@ -539,7 +542,17 @@ def run_live_pick_test():
 
 
 def main():
-    run_live_pick_test()
+    import rclpy
+    from smart_logistics_kit.bottom_io import PumpClient
+
+    rclpy.init()
+    io_client = PumpClient()
+    try:
+        run_live_pick_test(io_client)
+    finally:
+        io_client.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

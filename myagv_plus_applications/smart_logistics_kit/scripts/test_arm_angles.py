@@ -84,17 +84,38 @@ def send_angles(arm, angles, speed, wait):
         print('Motion finished.')
 
 
-def pump_on(arm):
-    arm.set_basic_output(2, 0)
-    arm.set_basic_output(5, 0)
+_io_client = None
+
+
+def get_io_client():
+    global _io_client
+    if _io_client is None:
+        import rclpy
+        from smart_logistics_kit.bottom_io import PumpClient
+        if not rclpy.ok():
+            rclpy.init()
+        _io_client = PumpClient()
+        atexit.register(shutdown_io_client)
+    return _io_client
+
+
+def shutdown_io_client():
+    global _io_client
+    if _io_client is not None:
+        import rclpy
+        _io_client.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+        _io_client = None
+
+
+def pump_on():
+    get_io_client().set_pump_state(1)
     print('Pump on.')
 
 
-def pump_off(arm):
-    arm.set_basic_output(2, 0)
-    arm.set_basic_output(5, 1)
-    time.sleep(0.05)
-    arm.set_basic_output(2, 1)
+def pump_off():
+    get_io_client().set_pump_state(0)
     print('Pump off.')
 
 
@@ -150,10 +171,10 @@ def main():
                 print('coords:', arm.get_coords())
                 continue
             if command in {'pump_on', 'on'}:
-                pump_on(arm)
+                pump_on()
                 continue
             if command in {'pump_off', 'off'}:
-                pump_off(arm)
+                pump_off()
                 continue
             if command == 'angles':
                 angles = parse_angle_values(tokens[1:])

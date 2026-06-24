@@ -15,9 +15,11 @@ class MechArm270Control:
             baudrate=115200,
             qr_camera='/dev/video1',
             qr_timeout=60.0,
-            qr_show_window=True):
+            qr_show_window=True,
+            io_client=None):
         self.mc = MechArm270(port, baudrate)
         self.mc.set_fresh_mode(0)
+        self.io = io_client
         self.qr_camera = qr_camera
         self.qr_timeout = qr_timeout
         self.qr_show_window = qr_show_window
@@ -38,14 +40,10 @@ class MechArm270Control:
         }
 
     def pump_on(self):
-        self.mc.set_basic_output(2, 0)
-        self.mc.set_basic_output(5, 0)
+        self.io.set_pump_state(1)
 
     def pump_off(self):
-        self.mc.set_basic_output(2, 0)
-        self.mc.set_basic_output(5, 1)
-        time.sleep(0.05)
-        self.mc.set_basic_output(2, 1)
+        self.io.set_pump_state(0)
 
     def move_angles(self, angles, speed=50):
         self.mc.send_angles(angles, speed)

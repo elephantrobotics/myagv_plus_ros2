@@ -84,6 +84,7 @@ class LogisticsRouteMission(Node):
         self.refiner_seq = 0
         self.refiner_history = []
         self.arm = None
+        self.io_client = None
         self.bridge_connected_logged = False
         self.last_bridge_wait_log = 0.0
         self.autocharge_requested = False
@@ -472,12 +473,15 @@ class LogisticsRouteMission(Node):
     def get_arm(self):
         if self.arm is None:
             from .arm_controller import MechArm270Control
+            from .bottom_io import PumpClient
+            self.io_client = PumpClient()
             self.arm = MechArm270Control(
                 port=self.arm_port,  # 机械臂串口；Arm serial port.
                 baudrate=self.arm_baudrate,  # 机械臂串口波特率；Arm serial baudrate.
                 qr_camera=self.qr_camera,  # 二维码相机设备；QR camera device.
                 qr_timeout=self.qr_timeout,  # 二维码识别超时，单位秒；QR scan timeout, in seconds.
-                qr_show_window=True)  # 显示二维码识别窗口；Show QR scan window.
+                qr_show_window=True,  # 显示二维码识别窗口；Show QR scan window.
+                io_client=self.io_client)  # 底部协议吸泵控制；Bottom-protocol pump control.
         return self.arm
 
     def make_pose(self, waypoint):
@@ -591,6 +595,8 @@ def main(args=None):
         print(f'{RED}[main] {error}{RESET}')
     finally:
         if node is not None:
+            if node.io_client is not None:
+                node.io_client.destroy_node()
             node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

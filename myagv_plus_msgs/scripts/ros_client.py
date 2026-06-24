@@ -1,245 +1,192 @@
 #!/usr/bin/env python3
-"""High-level ROS client for the myAGV Plus ESP32 serial protocol.
-
-The C++ driver exposes one generic QueryDevice service:
-
-    cmd_id + payload -> raw serial response frame
-
-This client converts convenient Python methods into that service format and
-validates the frame returned from the ESP32.
-"""
-
-from __future__ import annotations
-
-from typing import Callable, Iterable, Optional
-import enum
 import rclpy
 from rclpy.node import Node
 
-from myagv_plus_msgs.srv import QueryDevice
+from myagv_plus_msgs.srv import *
 
-class ProtocolCode(enum.Enum):
-    GET_MODIFY_VERSION = 0x01
-    GET_SYSTEM_VERSION = 0x02
-    GET_ROBOT_STATUS = 0x05
-    MOTOR_POWER_ON = 0x10
-    IS_MOTOR_POWERED = 0x12
-    SET_AUTO_REPORT = 0x23
-    GET_AUTO_REPORT = 0x24
-    SET_LED_COLOR = 0x34
-    SET_LED_MODE = 0x3A
-    SET_OUT_IO = 0x40
-    GET_IN_IO = 0x41
-    SET_FAN_STATUS = 0x42
+GET_MODIFY_VERSION    = 0x01  # 读次固件版本号
+GET_SYSTEM_VERSION    = 0x02  # 读主固件版本号
+GET_ROBOT_STATUS      = 0x05  # 读整机状态(电池/陀螺仪/电量)
+MOTOR_POWER_ON        = 0x10  # 电机上电/断电
+IS_MOTOR_POWERED      = 0x12  # 读电机供电状态
+SET_AUTO_REPORT       = 0x23  # 开/关自动上发
+GET_AUTO_REPORT       = 0x24  # 读自动上发开关
+SET_LED_COLOR         = 0x34  # 设灯带颜色(DIY)
+SET_LED_MODE          = 0x3A  # 设灯带模式(电量/DIY)
+SET_OUT_IO            = 0x40  # 设输出引脚电平
+GET_IN_IO             = 0x41  # 读输入引脚电平
+SET_FAN_STATE         = 0x42  # 风扇开/关
 
-    FRAME_HEADER = [0xFE, 0xFE, 0x0B]
-    RESPONSE_PAYLOAD_SIZE = 8
-    RESPONSE_FRAME_SIZE = len(FRAME_HEADER) + 1 + RESPONSE_PAYLOAD_SIZE + 2
 
-    def equal(self, other):
-        if isinstance(other, ProtocolCode):
-            return self.value == other.value
-        else:
-            return self.value == other
+class AGVIOClient(Node):
+    def __init__(self):
+        super().__init__('ros_client')
+        self.cli_query = self.create_client(QueryDevice, 'query_device')
+        self._wait_for_services()
 
-class AGVClient(Node):
-    def __init__(self, service_name: str = "query_device"):
-        super().__init__("ros_client")
-        self.cli_query = self.create_client(QueryDevice, service_name)
+    def _wait_for_services(self):
+        while not self.cli_query.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for /query_device service...')
 
-        self.get_logger().info(f"Waiting for service '{service_name}'...")
-        while rclpy.ok() and not self.cli_query.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn(f"Service '{service_name}' not available, waiting...")
-
-    def _call_service(self, client, request, timeout_sec: float = 5.0):
+    def _call_service(self, client, request):
         future = client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=timeout_sec)
-
-        if not future.done():
-            self.get_logger().error("Service call timed out")
-            return None
-
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
         if future.result() is not None:
             return future.result()
+        else:
+            self.get_logger().error(f'Service call failed: {future.exception()}')
+            return None
 
-        self.get_logger().error(f"Service call failed: {future.exception()}")
-        return None
-
-    @staticmethod
-    def _format_hex(data: Iterable[int]) -> str:
-        return " ".join(f"{value & 0xFF:02X}" for value in data)
-
-    def query_device(
-        self,
-        cmd_id: int,
-        payload: Optional[Iterable[int]] = None,
-        timeout_sec: float = 5.0,
-        validate_crc: bool = True,
-    ) -> Optional[list[int]]:
-        """Call QueryDevice and return the raw response frame."""
-        cmd_id = self._byte(cmd_id, "cmd_id")
-        payload_bytes = [self._byte(value, "payload byte") for value in (payload or [])]
-
-        if len(payload_bytes) > RESPONSE_PAYLOAD_SIZE:
-            raise ValueError(f"payload must contain at most {RESPONSE_PAYLOAD_SIZE} bytes")
-
+    def _send(self, cmd_id: int, payload=None):
+        # 发一条命令,返回里取出 8 字节数据区(去掉帧头/长度/指令/CRC),失败返回 None
+        # 返回帧: [0xFE, 0xFE, 长度, 指令, 数据x8, CRC高, CRC低]
         req = QueryDevice.Request()
         req.cmd_id = cmd_id
-        req.payload = payload_bytes
+        req.payload = bytes(self._pad8(payload or []))
 
-        res = self._call_service(self.cli_query, req, timeout_sec=timeout_sec)
+        res = self._call_service(self.cli_query, req)
         if res is None or not res.success:
-            self.get_logger().error(f"QueryDevice failed for cmd 0x{cmd_id:02X}")
+            self.get_logger().error(f"cmd 0x{cmd_id:02X} call failed")
             return None
 
-        frame = list(res.data)
-        if validate_crc and not self._validate_frame(cmd_id, frame):
+        data = list(res.data)
+        if len(data) < 6:
+            self.get_logger().error("Invalid response frame length")
+            return None
+        if data[3] != cmd_id:
+            self.get_logger().error(f"Command mismatch: expected 0x{cmd_id:02X}, got 0x{data[3]:02X}")
             return None
 
-        return frame
+        return data[4:-2]
 
-    def _payload(self, cmd_id: int, payload: Optional[Iterable[int]] = None) -> Optional[list[int]]:
-        frame = self.query_device(cmd_id, payload)
-        if frame is None:
+    def _pad8(self, vals):
+        # 数据区固定 8 字节,不足补 0,超出截断
+        p = list(vals)[:8]
+        return p + [0] * (8 - len(p))
+
+    def _set(self, cmd_id: int, payload=None) -> int:
+        # 写类命令,成功(收到合法返回)返回 1,失败返回 0
+        return 1 if self._send(cmd_id, payload) is not None else 0
+
+    # --- System & version ---
+
+    def get_system_version(self):
+        # 读取主固件版本号,原始值除以 10
+        # agv.get_system_version()  ->  1.5
+        data = self._send(GET_SYSTEM_VERSION)
+        return data[0] / 10.0 if data else None
+
+    def get_modify_version(self):
+        # 读取次固件版本号,同样除以 10,主要用来区分测试迭代
+        # agv.get_modify_version()  ->  0.2
+        data = self._send(GET_MODIFY_VERSION)
+        return data[0] / 10.0 if data else None
+
+    def get_robot_status(self):
+        # 读硬件异常状态,返回 [电池, 陀螺仪, 电量]
+        # 电池/陀螺仪: 0 正常 / 1 异常;电量: 0 正常 / 1 警告(≤19.6V) / 2 低压(<19V)
+        # agv.get_robot_status()  ->  [0, 0, 0]
+        data = self._send(GET_ROBOT_STATUS)
+        if not data or len(data) < 3:
             return None
-        return frame[4:-2]
+        return [data[0], data[1], data[2]]
 
-    def _query_and_parse(
-        self,
-        cmd_id: int,
-        parser: Callable[[list[int]], object],
-        payload: Optional[Iterable[int]] = None,
-    ):
-        response_payload = self._payload(cmd_id, payload)
-        if response_payload is None:
-            return None
+    # --- Motor power ---
 
-        try:
-            return parser(response_payload)
-        except (IndexError, ValueError, TypeError) as exc:
-            self.get_logger().error(f"Parse failed for cmd 0x{cmd_id:02X}: {exc}")
-            return None
+    def power_on(self) -> int:
+        # 开启机器人(电机供电/继电器通电),对应 0x10 state=1
+        # agv.power_on()  ->  1
+        return self._set(MOTOR_POWER_ON, [1])
 
-    def _ack(self, cmd_id: int, payload: Optional[Iterable[int]] = None) -> bool:
-        response_payload = self._payload(cmd_id, payload)
-        if response_payload is None:
-            return False
+    def power_off(self) -> int:
+        # 关闭机器人(断开电机供电/继电器),对应 0x10 state=0
+        # agv.power_off()  ->  1
+        return self._set(MOTOR_POWER_ON, [0])
 
-        success = response_payload[0] == 0x01
-        if not success:
-            self.get_logger().error(
-                f"Command 0x{cmd_id:02X} failed with status 0x{response_payload[0]:02X}"
-            )
-        return success
+    def is_power_on(self):
+        # 查机器人电源是否开启,1=开机 0=关机
+        # agv.is_power_on()  ->  1
+        data = self._send(IS_MOTOR_POWERED)
+        return data[0] if data else None
 
-    def _merge(self, cmd_id: int, *payload: int, parser=None):
-        response_payload = self._payload(cmd_id, payload)
-        if response_payload is None:
-            return None
+    # --- Auto report ---
 
-        if parser is None:
-            return response_payload
+    def set_auto_report_state(self, state: int) -> int:
+        # 开关自动上发,1 开 0 关
+        # 开了之后底板每 50ms 主动上报电池/陀螺仪,走 /imu、/voltage 等话题
+        # agv.set_auto_report_state(1)
+        return self._set(SET_AUTO_REPORT, [state])
 
-        return response_payload
+    def get_auto_report_state(self):
+        # 查自动上发当前是否开启,1=开 0=关
+        # agv.get_auto_report_state()  ->  1
+        data = self._send(GET_AUTO_REPORT)
+        return data[0] if data else None
 
-    @classmethod
-    def _parsing_data(cls, genre, reply_data):
-        if not reply_data:
-            return None
+    # --- LED ---
 
-        if ProtocolCode.GET_SYSTEM_VERSION.equal(genre):
-            return reply_data[0] / 10
-
-        if ProtocolCode.GET_MOTOR_TEMPERATURE.equal(genre):
-            return list(data / 10 for data in reply_data)
-
-        if ProtocolCode.GET_ROBOT_STATUS.equal(genre):
-            pass
-
-        if ProtocolCode.GET_MOTOR_ENABLE_STATUS.equal(genre):
-            return list(reply_data[:4])
-
-        if ProtocolCode.GET_INPUT_IO.equal(genre):
-            if reply_data[0] == 255:
-                return -1
-            return reply_data[1]
-
-        return reply_data[0]
-
-    # API methods for specific commands
-    def get_modify_version(self) -> Optional[int]:
-        return self._query_and_parse(GET_MODIFY_VERSION, lambda payload: payload[0])
-
-    def get_system_version(self) -> Optional[int]:
-        return self._query_and_parse(GET_SYSTEM_VERSION, lambda payload: payload[0])
-
-    def get_robot_status(self) -> Optional[dict[str, object]]:
-        def parser(payload: list[int]) -> dict[str, object]:
-            return {
-                "battery_status": payload[0],
-                "imu_status": payload[1],
-                "battery_level": payload[2],
-                "charging": bool(payload[3]),
-                "voltage": payload[4] / 10.0,
-                "backup_voltage": payload[5] / 10.0,
-            }
-
-        return self._query_and_parse(GET_ROBOT_STATUS, parser)
-
-    def motor_power_on(self, enable: bool = True) -> bool:
-        return self._ack(MOTOR_POWER_ON, [0x01 if enable else 0x00])
-
-    def is_motor_powered(self) -> Optional[bool]:
-        return self._query_and_parse(IS_MOTOR_POWERED, lambda payload: bool(payload[0]))
-
-    def set_auto_report(self, enable: bool) -> bool:
-        return self._ack(SET_AUTO_REPORT, [0x01 if enable else 0x00])
-
-    def get_auto_report_status(self) -> Optional[bool]:
-        return self._query_and_parse(GET_AUTO_REPORT, lambda payload: bool(payload[0]))
-
-    def set_led_color(self, position: int, brightness: int, color: tuple) -> int:
-        payload = [
-            self._byte(position, "position"),
-            self._byte(brightness, "brightness"),
-            self._byte(color[0], "color R"),
-            self._byte(color[1], "color G"),
-            self._byte(color[2], "color B"),
-        ]
-        return self._merge(SET_LED_COLOR, payload)
+    def set_led_color(self, brightness: int, color: tuple) -> int:
+        # 设置灯带颜色,要先 set_led_mode(1) 切到 DIY 模式才生效
+        # brightness 0-255,color 是 (r, g, b),各 0-255
+        # agv.set_led_color(100, (255, 0, 0))  红色,亮度100
+        r, g, b = color
+        payload = [brightness, r, g, b]
+        return self._set(SET_LED_COLOR, payload)
 
     def set_led_mode(self, mode: int) -> int:
-        return self._merge(SET_LED_MODE, [mode])
+        # 切灯带模式,0 跟随电量显示(默认)/ 1 DIY 自定义颜色
+        # agv.set_led_mode(1)
+        return self._set(SET_LED_MODE, [mode])
 
-    def set_pin_output(self, pin: int, state: int) -> bool:
-        payload = [
-            self._byte(pin, "pin"),
-            self._byte(state, "state"),
-        ]
-        return self._merge(SET_OUT_IO, payload)
+    # --- Digital IO & fan ---
 
-    def get_pin_input(self, pin: int) -> int:
-        return self._query_and_parse(GET_IN_IO, lambda payload: payload[0], [self._byte(pin, "pin")])
+    def set_pin_output(self, pin: int, state: int) -> int:
+        # 设置输出引脚电平,state 1 高 0 低
+        # pin 1-6 对应 base 板丝印 24/22/23/27/18/17,0 表示全部
+        # agv.set_pin_output(1, 1)
+        return self._set(SET_OUT_IO, [pin, state])
 
-    def set_fan_status(self, state: int) -> int:
-        return self._merge(SET_FAN_STATUS, [state])
+    def get_pin_input(self, pin: int):
+        # 读输入引脚电平,pin 1-6 对应 base 板丝印 7/11/8/9/25/10
+        # 返回该引脚电平 0/1;读取失败或无此引脚返回 -1
+        # pin=0 为扩展用法(规范外):一次返回 1-6 号引脚状态列表
+        # agv.get_pin_input(1)  ->  0
+        data = self._send(GET_IN_IO, [pin])
+        if not data or len(data) < 2:
+            return -1
+        if pin == 0:
+            return list(data[1:7])
+        state = data[1]
+        return -1 if state == 255 else state
+
+    def set_fan_state(self, state: int) -> int:
+        # 风扇开关,1 开 0 关,默认开
+        # agv.set_fan_state(1)
+        return self._set(SET_FAN_STATE, [state])
 
 
 def main(args=None):
     rclpy.init(args=args)
-    client = AGVClient()
+    client = AGVIOClient()
 
-    try:
-        print("system version:", client.get_system_version())
-        print("modify version:", client.get_modify_version())
-        print("Robot Status:", client.get_robot_status())
-        client.get_auto_report_status()
-        client.set_led_color(0, 255, 255, 0, 0)
-        client.set_led_mode(True)
-        client.set_fan_status(0)
-    finally:
-        client.destroy_node()
-        rclpy.shutdown()
+    print("0x01 get_modify_version  :", client.get_modify_version())      # [读] 无参,返回次版本号
+    print("0x02 get_system_version  :", client.get_system_version())      # [读] 无参,返回主版本号
+    print("0x05 get_robot_status    :", client.get_robot_status())        # [读] 无参,返回 [电池, 陀螺仪, 电量]
+    # print("0x10 power_on            :", client.power_on())                # [写] 开机(电机供电)
+    # print("0x10 power_off           :", client.power_off())               # [写] 关机(断电)
+    # print("0x12 is_power_on         :", client.is_power_on())             # [读] 无参,返回 1=开机/0=关机
+    # print("0x23 set_auto_report     :", client.set_auto_report_state(1))  # [写] state: 1=开 0=关
+    # print("0x24 get_auto_report     :", client.get_auto_report_state())   # [读] 无参,返回 1=开/0=关
+    # print("0x34 set_led_color       :", client.set_led_color(100, (255, 0, 0)))  # [写] brightness 0-255, color=(R,G,B)各0-255;红(255,0,0)/绿(0,255,0)/蓝(0,0,255)/白(255,255,255);先切 DIY
+    # print("0x3A set_led_mode        :", client.set_led_mode(1))           # [写] mode: 0=电量显示 1=DIY自定义
+    # print("0x40 set_pin_output      :", client.set_pin_output(1, 1))      # [写] pin 1-6→丝印24/22/23/27/18/17, state: 1=高 0=低
+    # print("0x41 get_pin_input(1)    :", client.get_pin_input(12))          # [读] pin 1-6→丝印7/11/8/9/25/10(单个引脚)
+    # print("0x41 get_pin_input(0)    :", client.get_pin_input(0))          # [读] pin=0 读全部1-6,返回列表(规范外扩展)
+    #print("0x42 set_fan_state       :", client.set_fan_state(1))          # [写] state: 1=开 0=关(规范无此函数,驱动支持)
 
-if __name__ == "__main__":
+    client.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
     main()
