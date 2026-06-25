@@ -543,10 +543,10 @@ def run_live_pick_test(io_client):
 
 def main():
     import rclpy
-    from smart_logistics_kit.bottom_io import PumpClient
+    from ros_client import AGVIOClient
 
     rclpy.init()
-    io_client = PumpClient()
+    io_client = AGVIOClient()
     try:
         run_live_pick_test(io_client)
     finally:

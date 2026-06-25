@@ -473,8 +473,8 @@ class LogisticsRouteMission(Node):
     def get_arm(self):
         if self.arm is None:
             from .arm_controller import MechArm270Control
-            from .bottom_io import PumpClient
-            self.io_client = PumpClient()
+            from ros_client import AGVIOClient
+            self.io_client = AGVIOClient()
             self.arm = MechArm270Control(
                 port=self.arm_port,  # 机械臂串口；Arm serial port.
                 baudrate=self.arm_baudrate,  # 机械臂串口波特率；Arm serial baudrate.

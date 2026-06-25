@@ -91,10 +91,10 @@ def get_io_client():
     global _io_client
     if _io_client is None:
         import rclpy
-        from smart_logistics_kit.bottom_io import PumpClient
+        from ros_client import AGVIOClient
         if not rclpy.ok():
             rclpy.init()
-        _io_client = PumpClient()
+        _io_client = AGVIOClient()
         atexit.register(shutdown_io_client)
     return _io_client
 

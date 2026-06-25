@@ -6,13 +6,13 @@ import numpy as np
 import time
 from pymycobot import MechArm270
 from smart_logistics_kit_lite.QRCodeScanner import QRCodeScanner
-from smart_logistics_kit_lite.bottom_io import PumpClient
+from ros_client import AGVIOClient
 
 class MechArm270Control(Node):
     def __init__(self,port='/dev/ttyACM1',baudrate=115200,io_client=None):
         self.mc = MechArm270(port, baudrate)
         self.mc.set_fresh_mode(0)
-        self.io = io_client if io_client is not None else PumpClient()
+        self.io = io_client if io_client is not None else AGVIOClient()
 
         self.scanner = QRCodeScanner("/dev/video1")
 

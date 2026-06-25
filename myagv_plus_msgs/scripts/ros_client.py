@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import SingleThreadedExecutor
 
 from myagv_plus_msgs.srv import *
 
@@ -16,12 +17,16 @@ SET_LED_MODE          = 0x3A  # 设灯带模式(电量/DIY)
 SET_OUT_IO            = 0x40  # 设输出引脚电平
 GET_IN_IO             = 0x41  # 读输入引脚电平
 SET_FAN_STATE         = 0x42  # 风扇开/关
+SET_PUMP_STATE        = 0x43  # 吸泵开/关
+SET_PUMP_IO           = 0x44  # 吸泵 IO 直接控制
 
 
 class AGVIOClient(Node):
     def __init__(self):
         super().__init__('ros_client')
         self.cli_query = self.create_client(QueryDevice, 'query_device')
+        self._executor = SingleThreadedExecutor()
+        self._executor.add_node(self)
         self._wait_for_services()
 
     def _wait_for_services(self):
@@ -30,7 +35,7 @@ class AGVIOClient(Node):
 
     def _call_service(self, client, request):
         future = client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+        self._executor.spin_until_future_complete(future, timeout_sec=5.0)
         if future.result() is not None:
             return future.result()
         else:
@@ -148,41 +153,55 @@ class AGVIOClient(Node):
 
     def get_pin_input(self, pin: int):
         # 读输入引脚电平,pin 1-6 对应 base 板丝印 7/11/8/9/25/10
-        # 返回该引脚电平 0/1;读取失败或无此引脚返回 -1
-        # pin=0 为扩展用法(规范外):一次返回 1-6 号引脚状态列表
+        # 返回该引脚电平 0/1;不存在的引脚返回 -1
+        # pin=0 时一次返回 1-6 号引脚状态的列表
         # agv.get_pin_input(1)  ->  0
         data = self._send(GET_IN_IO, [pin])
         if not data or len(data) < 2:
             return -1
         if pin == 0:
             return list(data[1:7])
-        state = data[1]
-        return -1 if state == 255 else state
+        if data[0] != pin:  # 固件不认识的引脚:byte1 回 1
+            return -1
+        return data[1]
 
     def set_fan_state(self, state: int) -> int:
         # 风扇开关,1 开 0 关,默认开
         # agv.set_fan_state(1)
         return self._set(SET_FAN_STATE, [state])
 
+    def set_pump_state(self, state: int) -> int:
+        # 吸泵开关,1 开 0 关
+        # agv.set_pump_state(1)
+        return self._set(SET_PUMP_STATE, [state])
+
+    def set_pump_io(self, pin: int, state: int) -> int:
+        # 直接控制吸泵 IO,pin 取 2 或 5(对应吸泵2、5)
+        # state 0 低电平 / 1 高电平;最新吸泵 5 号脚低电平工作、高电平关闭
+        # agv.set_pump_io(5, 0)
+        return self._set(SET_PUMP_IO, [pin, state])
+
 
 def main(args=None):
     rclpy.init(args=args)
     client = AGVIOClient()
 
-    print("0x01 get_modify_version  :", client.get_modify_version())      # [读] 无参,返回次版本号
-    print("0x02 get_system_version  :", client.get_system_version())      # [读] 无参,返回主版本号
-    print("0x05 get_robot_status    :", client.get_robot_status())        # [读] 无参,返回 [电池, 陀螺仪, 电量]
-    # print("0x10 power_on            :", client.power_on())                # [写] 开机(电机供电)
-    # print("0x10 power_off           :", client.power_off())               # [写] 关机(断电)
-    # print("0x12 is_power_on         :", client.is_power_on())             # [读] 无参,返回 1=开机/0=关机
-    # print("0x23 set_auto_report     :", client.set_auto_report_state(1))  # [写] state: 1=开 0=关
-    # print("0x24 get_auto_report     :", client.get_auto_report_state())   # [读] 无参,返回 1=开/0=关
-    # print("0x34 set_led_color       :", client.set_led_color(100, (255, 0, 0)))  # [写] brightness 0-255, color=(R,G,B)各0-255;红(255,0,0)/绿(0,255,0)/蓝(0,0,255)/白(255,255,255);先切 DIY
-    # print("0x3A set_led_mode        :", client.set_led_mode(1))           # [写] mode: 0=电量显示 1=DIY自定义
-    # print("0x40 set_pin_output      :", client.set_pin_output(1, 1))      # [写] pin 1-6→丝印24/22/23/27/18/17, state: 1=高 0=低
-    # print("0x41 get_pin_input(1)    :", client.get_pin_input(12))          # [读] pin 1-6→丝印7/11/8/9/25/10(单个引脚)
-    # print("0x41 get_pin_input(0)    :", client.get_pin_input(0))          # [读] pin=0 读全部1-6,返回列表(规范外扩展)
-    #print("0x42 set_fan_state       :", client.set_fan_state(1))          # [写] state: 1=开 0=关(规范无此函数,驱动支持)
+    print("0x01 get_modify_version:", client.get_modify_version())      # [读] 无参,返回次版本号
+    print("0x02 get_system_version:", client.get_system_version())      # [读] 无参,返回主版本号
+    print("0x05 get_robot_status:", client.get_robot_status())          # [读] 无参,返回 [电池, 陀螺仪, 电量]
+    # print("0x10 power_on:", client.power_on())                          # [写] 开机(电机供电)
+    # print("0x10 power_off:", client.power_off())                        # [写] 关机(断电)
+    # print("0x12 is_power_on:", client.is_power_on())                    # [读] 无参,返回 1=开机/0=关机
+    # print("0x23 set_auto_report:", client.set_auto_report_state(1))     # [写] state: 1=开 0=关
+    # print("0x24 get_auto_report:", client.get_auto_report_state())      # [读] 无参,返回 1=开/0=关
+    # print("0x34 set_led_color:", client.set_led_color(100, (255, 0, 0)))  # [写] brightness 0-255, color=(R,G,B)各0-255;红(255,0,0)/绿(0,255,0)/蓝(0,0,255)/白(255,255,255);先切 DIY
+    # print("0x3A set_led_mode:", client.set_led_mode(1))                 # [写] mode: 0=电量显示 1=DIY自定义
+    # print("0x40 set_pin_output:", client.set_pin_output(1, 1))          # [写] pin 1-6→丝印24/22/23/27/18/17, state: 1=高 0=低
+    # print("0x41 get_pin_input:", client.get_pin_input(0))               # [读] pin 1-6→丝印7/11/8/9/25/10(单个引脚)
+    # print("0x41 get_pin_input:", client.get_pin_input(0))               # [读] pin=0 读全部1-6,返回列表(规范外扩展)
+    # print("0x42 set_fan_state:", client.set_fan_state(1))               # [写] state: 1=开 0=关
+    # print("0x43 set_pump_state:", client.set_pump_state(1))             # [写] state: 1=开 0=关
+    # print("0x44 set_pump_io:", client.set_pump_io(5, 0))                # [写] pin 2/5, state: 0=低电平 1=高电平(最新吸泵5脚低电平工作)
 
     client.destroy_node()
     rclpy.shutdown()
