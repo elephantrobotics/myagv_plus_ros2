@@ -51,6 +51,7 @@ def generate_launch_description():
         declare_esp32_debug_mode,
         GroupAction([
             SetRemap(src="voltage", dst="/voltage_hw"),
+            SetRemap(src="voltage_backup", dst="/voltage_backup_hw"),
             bringup_launch,
         ]),
     ])

@@ -31,11 +31,14 @@ class AutochargeCoordinator(Node):
         self.stable_seconds = 2.0  # 电压等级稳定窗口，单位秒；Voltage level stability window, in seconds.
         self.log_interval = 5.0  # 普通节流日志间隔，单位秒；General throttled log interval, in seconds.
         self.voltage_stale_seconds = 30.0  # 电压话题失联判定时间，单位秒；Voltage topic stale timeout, in seconds.
+        self.voltage_source_fresh_seconds = 5.0  # 主/副电压参与判断的最新窗口，单位秒；Voltage source freshness window for selection.
         self.charge_current_threshold_ma = 200.0  # 充电电流判定阈值，单位 mA；Charging current threshold, in mA.
 
         self.voltage_samples = deque(maxlen=200)
         self.last_voltage = None
         self.last_voltage_time = 0.0
+        self.source_voltages = {'main': None, 'backup': None}
+        self.source_voltage_times = {'main': 0.0, 'backup': 0.0}
         self.stable_level = None
         self.stable_level_since = 0.0
         self.last_level = None
@@ -58,21 +61,33 @@ class AutochargeCoordinator(Node):
         self.request_pub = self.create_publisher(String, 'autocharge/request', 10)  # 回充请求输出；Autocharge request output.
         self.state_pub = self.create_publisher(String, 'autocharge/state', 10)  # 回充状态输出；Autocharge state output.
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)  # 最后一米速度控制；Final docking velocity command.
-        self.create_subscription(Float32, '/voltage', self.voltage_cb, 10)  # 电池电压输入；Battery voltage input.
+        self.create_subscription(Float32, '/voltage', lambda msg: self.voltage_cb(msg, 'main'), 10)  # 主电池电压输入；Main battery voltage input.
+        self.create_subscription(Float32, '/voltage_backup', lambda msg: self.voltage_cb(msg, 'backup'), 10)  # 副电池电压输入；Backup battery voltage input.
         self.create_subscription(String, 'autocharge/ready', self.autocharge_ready_cb, 10)  # P 点到达触发；P waypoint ready trigger.
         self.create_timer(1.0, self.timer_cb)
 
         self.get_logger().warn(
-            f'Autocharge monitor waiting for stable voltage. topic=/voltage, '
+            f'Autocharge monitor waiting for stable voltage. topics=/voltage,/voltage_backup, '
+            f'warning=max, recovery=min, '
             f'stable_seconds={self.stable_seconds:.1f}, '
             f'warning={self.warning_voltage:.1f} V, recover={self.recover_voltage:.1f} V')
         self.get_logger().info(
             'USB-CAN docking gate: ready_topic=autocharge/ready, '
             'port=/dev/ttyCH341USB1, cmd_vel=/cmd_vel')
 
-    def voltage_cb(self, msg):
+    def voltage_cb(self, msg, source):
         now = time.monotonic()
-        raw_voltage = float(msg.data)
+        source_voltage = float(msg.data)
+        self.source_voltages[source] = None if source == 'backup' and source_voltage <= 0.0 else source_voltage
+        self.source_voltage_times[source] = now
+        if source == 'backup' and self.source_voltages['main'] is None:
+            self.publish_state('waiting_voltage_topic')
+            return
+        raw_voltage = self.get_selected_voltage(now)
+        if raw_voltage is None:
+            self.publish_state('waiting_voltage_topic')
+            return
+
         self.last_voltage = raw_voltage
         self.last_voltage_time = now
         self.voltage_samples.append((now, raw_voltage))
@@ -87,9 +102,9 @@ class AutochargeCoordinator(Node):
             self.request_pub.publish(String(data='warning'))
             self.publish_state(f'warning:{raw_voltage:.1f}')
             self.get_logger().warn(
-                f'{YELLOW}Startup low voltage: voltage={raw_voltage:.1f} V < '
+                f'{YELLOW}Startup low voltage: {self.format_voltage_log(raw_voltage, "最高电压")} < '
                 f'{self.warning_voltage:.1f} V. Request autocharge immediately.{RESET}')
-            self.throttled_return_to_charge_log(raw_voltage)
+            self.throttled_return_to_charge_log(raw_voltage, '最高电压')
             return
 
         stable = self.get_stable_voltage(now)
@@ -104,16 +119,17 @@ class AutochargeCoordinator(Node):
         if not self.initialized:
             self.initialized = True
             self.get_logger().info(
-                f'{GREEN}Autocharge monitor initialized: stable_voltage={voltage:.1f} V, '
+                f'{GREEN}Autocharge monitor initialized: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")}, '
                 f'level={level}.{RESET}')
 
         if level != self.last_level:
             if level == 'warning':
                 self.get_logger().warn(
-                    f'{YELLOW}Battery warning: voltage={voltage:.1f} V < '
+                    f'{YELLOW}Battery warning: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")} < '
                     f'{self.warning_voltage:.1f} V.{RESET}')
             else:
-                self.get_logger().info(f'{GREEN}Battery normal: voltage={voltage:.1f} V.{RESET}')
+                self.get_logger().info(
+                    f'{GREEN}Battery normal: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")}.{RESET}')
             self.last_level = level
 
         if voltage < self.warning_voltage:
@@ -122,13 +138,13 @@ class AutochargeCoordinator(Node):
             self.request_active = True
             self.request_level = level
             self.request_pub.publish(String(data=level))
-        elif self.request_active and voltage >= self.recover_voltage:
+        elif self.request_active and voltage >= self.recover_voltage and self.is_recovered(now):
             self.request_active = False
             self.request_level = 'normal'
             self.docking_done = False
             self.request_pub.publish(String(data='normal'))
             self.get_logger().info(
-                f'{GREEN}Battery recovered: voltage={voltage:.1f} V >= '
+                f'{GREEN}Battery recovered: {self.format_voltage_log(voltage, "最低电压")} >= '
                 f'{self.recover_voltage:.1f} V.{RESET}')
         elif self.request_active:
             self.request_pub.publish(String(data=self.request_level))
@@ -136,7 +152,7 @@ class AutochargeCoordinator(Node):
         state_level = self.request_level if self.request_active else level
         self.publish_state(f'{state_level}:{voltage:.1f}')
         if self.request_active and not self.docking_done:
-            self.throttled_return_to_charge_log(voltage)
+            self.throttled_return_to_charge_log(voltage, '最低电压')
         elif self.docking_done:
             self.throttled_charging_log(voltage)
 
@@ -294,6 +310,56 @@ class AutochargeCoordinator(Node):
         voltage = sum(window) / len(window)
         return voltage, level
 
+    def get_selected_voltage(self, now):
+        candidates = []
+        for source, voltage in self.source_voltages.items():
+            if voltage is None:
+                continue
+            age = now - self.source_voltage_times[source]
+            if age > self.voltage_source_fresh_seconds:
+                continue
+            candidates.append((voltage, source))
+        if not candidates:
+            return None
+        if self.request_active:
+            return min(candidates, key=lambda item: item[0])[0]
+        return max(candidates, key=lambda item: item[0])[0]
+
+    def format_voltage_log(self, selected_voltage=None, selected_label=''):
+        now = time.monotonic()
+        parts = []
+        main_voltage = self.source_voltages['main']
+        if (
+            main_voltage is not None
+            and now - self.source_voltage_times['main'] <= self.voltage_source_fresh_seconds
+        ):
+            parts.append(f'voltage电压 {main_voltage:.1f}V')
+        backup_voltage = self.source_voltages['backup']
+        if (
+            backup_voltage is not None
+            and now - self.source_voltage_times['backup'] <= self.voltage_source_fresh_seconds
+        ):
+            parts.append(f'voltage_backup电压 {backup_voltage:.1f}V')
+        if selected_label and selected_voltage is not None:
+            parts.append(f'{selected_label} {selected_voltage:.1f}V')
+        if not parts:
+            if selected_voltage is None:
+                return '电压 --V'
+            return f'电压 {selected_voltage:.1f}V'
+        return '，'.join(parts)
+
+    def is_recovered(self, now):
+        main_voltage = self.source_voltages['main']
+        if main_voltage is None or now - self.source_voltage_times['main'] > self.voltage_source_fresh_seconds:
+            return False
+        if main_voltage < self.recover_voltage:
+            return False
+
+        backup_voltage = self.source_voltages['backup']
+        if backup_voltage is None or now - self.source_voltage_times['backup'] > self.voltage_source_fresh_seconds:
+            return True
+        return backup_voltage >= self.recover_voltage
+
     def drop_old_voltage_samples(self, now):
         max_age = max(self.stable_seconds + 2.0, self.stable_seconds * 2.0)
         while self.voltage_samples and now - self.voltage_samples[0][0] > max_age:
@@ -304,14 +370,14 @@ class AutochargeCoordinator(Node):
         if self.last_voltage is None:
             if now - self.last_wait_log >= self.log_interval:
                 self.last_wait_log = now
-                self.get_logger().warn('Waiting for voltage topic: /voltage')
+                self.get_logger().warn('Waiting for voltage topic: /voltage or /voltage_backup')
                 self.publish_state('waiting_voltage_topic')
             return
 
         age = now - self.last_voltage_time
         if age >= self.voltage_stale_seconds and now - self.last_wait_log >= self.log_interval:
             self.last_wait_log = now
-            self.get_logger().warn(f'Voltage topic stale: last /voltage sample was {age:.1f} s ago.')
+            self.get_logger().warn(f'Voltage topic stale: last selected voltage sample was {age:.1f} s ago.')
             self.publish_state(f'voltage_stale:{age:.1f}')
 
     def get_level(self, voltage):
@@ -348,21 +414,20 @@ class AutochargeCoordinator(Node):
             f"infrared_flag={bits[6]}, charging_flag={bits[7]}, "
             f"current={frame['actual_current']:.1f} mA")
 
-    def throttled_return_to_charge_log(self, voltage):
+    def throttled_return_to_charge_log(self, voltage, selected_label):
         now = time.monotonic()
         if now - self.last_return_to_charge_log < 1.0:
             return
         self.last_return_to_charge_log = now
         self.get_logger().warn(
-            f'{YELLOW}电压为 {voltage:.1f}V，过低，需要充电，正在返回 P 点充电。{RESET}')
+            f'{YELLOW}{self.format_voltage_log(voltage, selected_label)}，过低，需要充电，正在返回 P 点充电。{RESET}')
 
     def throttled_charging_log(self, voltage):
         now = time.monotonic()
         if now - self.last_charging_log < 5.0:
             return
         self.last_charging_log = now
-        voltage_text = '--' if voltage is None else f'{voltage:.1f}'
-        self.get_logger().info(f'{GREEN}电压为 {voltage_text}V，正在充电...{RESET}')
+        self.get_logger().info(f'{GREEN}{self.format_voltage_log(voltage, "最低电压")}，正在充电...{RESET}')
 
     def stop(self):
         self.shutdown_requested = True
