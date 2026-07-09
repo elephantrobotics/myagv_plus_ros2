@@ -34,7 +34,9 @@ enum class Esp32Cmd : uint8_t
   SET_LED_MODE            = 0x3A,
   SET_OUT_IO              = 0x40,
   GET_IN_IO               = 0x41,
-  SET_FAN_STATE           = 0x42
+  SET_FAN_STATE           = 0x42,
+  SET_PUMP_STATE          = 0x43,
+  SET_PUMP_IO             = 0x44
 };
 
 class MyAGV_Plus : public rclcpp::Node
