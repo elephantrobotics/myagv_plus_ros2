@@ -190,8 +190,8 @@ local_costmap:
         lethal_override_cost: 200
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 4.0
-        inflation_radius: 0.22
+        cost_scaling_factor: 3.8
+        inflation_radius: 0.21
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -211,7 +211,7 @@ local_costmap:
           raytrace_max_range: 3.0
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.28
       static_layer:
         map_subscribe_transient_local: True
       always_send_full_costmap: True
@@ -251,17 +251,17 @@ global_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
+          raytrace_max_range: 4.2
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.295
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 4.0
-        inflation_radius: 0.22
+        cost_scaling_factor: 3.8
+        inflation_radius: 0.21
       always_send_full_costmap: True
       service_introspection_mode: "disabled"
 

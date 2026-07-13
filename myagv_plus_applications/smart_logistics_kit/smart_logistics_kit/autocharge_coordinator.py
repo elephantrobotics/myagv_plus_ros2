@@ -30,9 +30,10 @@ class AutochargeCoordinator(Node):
         self.recover_voltage = 24.0  # 回充恢复电压阈值，单位 V；Voltage threshold to clear autocharge request, in volts.
         self.stable_seconds = 2.0  # 电压等级稳定窗口，单位秒；Voltage level stability window, in seconds.
         self.log_interval = 5.0  # 普通节流日志间隔，单位秒；General throttled log interval, in seconds.
-        self.voltage_stale_seconds = 30.0  # 电压话题失联判定时间，单位秒；Voltage topic stale timeout, in seconds.
-        self.voltage_source_fresh_seconds = 5.0  # 主/副电压参与判断的最新窗口，单位秒；Voltage source freshness window for selection.
+        self.voltage_stale_seconds = 15.0  # 电压话题失联判定时间，单位秒；Voltage topic stale timeout, in seconds.
+        self.voltage_source_fresh_seconds = 3.0  # 主/副电压参与判断的最新窗口，单位秒；Voltage source freshness window for selection.
         self.charge_current_threshold_ma = 200.0  # 充电电流判定阈值，单位 mA；Charging current threshold, in mA.
+        self.docking_retry_interval = 3.0  # 对接失败后重试间隔，单位秒；Docking retry interval after a failed attempt, in seconds.
 
         self.voltage_samples = deque(maxlen=200)
         self.last_voltage = None
@@ -57,6 +58,7 @@ class AutochargeCoordinator(Node):
         self.last_ready_ignore_log = 0.0
         self.last_return_to_charge_log = 0.0
         self.last_charging_log = 0.0
+        self.last_docking_retry_log = 0.0
 
         self.request_pub = self.create_publisher(String, 'autocharge/request', 10)  # 回充请求输出；Autocharge request output.
         self.state_pub = self.create_publisher(String, 'autocharge/state', 10)  # 回充状态输出；Autocharge state output.
@@ -102,7 +104,7 @@ class AutochargeCoordinator(Node):
             self.request_pub.publish(String(data='warning'))
             self.publish_state(f'warning:{raw_voltage:.1f}')
             self.get_logger().warn(
-                f'{YELLOW}Startup low voltage: {self.format_voltage_log(raw_voltage, "最高电压")} < '
+                f'{YELLOW}Startup low voltage [{self.battery_mode_label(now)}]: {self.format_voltage_log(raw_voltage, "最高电压")} < '
                 f'{self.warning_voltage:.1f} V. Request autocharge immediately.{RESET}')
             self.throttled_return_to_charge_log(raw_voltage, '最高电压')
             return
@@ -119,17 +121,17 @@ class AutochargeCoordinator(Node):
         if not self.initialized:
             self.initialized = True
             self.get_logger().info(
-                f'{GREEN}Autocharge monitor initialized: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")}, '
+                f'{GREEN}Autocharge monitor initialized [{self.battery_mode_label(now)}]: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")}, '
                 f'level={level}.{RESET}')
 
         if level != self.last_level:
             if level == 'warning':
                 self.get_logger().warn(
-                    f'{YELLOW}Battery warning: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")} < '
+                    f'{YELLOW}Battery warning [{self.battery_mode_label(now)}]: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")} < '
                     f'{self.warning_voltage:.1f} V.{RESET}')
             else:
                 self.get_logger().info(
-                    f'{GREEN}Battery normal: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")}.{RESET}')
+                    f'{GREEN}Battery normal [{self.battery_mode_label(now)}]: {self.format_voltage_log(voltage, "最低电压" if self.request_active else "最高电压")}.{RESET}')
             self.last_level = level
 
         if voltage < self.warning_voltage:
@@ -144,7 +146,7 @@ class AutochargeCoordinator(Node):
             self.docking_done = False
             self.request_pub.publish(String(data='normal'))
             self.get_logger().info(
-                f'{GREEN}Battery recovered: {self.format_voltage_log(voltage, "最低电压")} >= '
+                f'{GREEN}Battery recovered [{self.battery_mode_label(now)}]: {self.format_voltage_log(voltage, "最低电压")} >= '
                 f'{self.recover_voltage:.1f} V.{RESET}')
         elif self.request_active:
             self.request_pub.publish(String(data=self.request_level))
@@ -181,36 +183,50 @@ class AutochargeCoordinator(Node):
         parser = None
         result = 'stopped'
         frame_count = 0
-        deadline = time.monotonic() + 180.0  # USB-CAN 最后一米最长运行时间，单位秒；USB-CAN final docking max runtime, in seconds.
 
         try:
-            parser = SerialCANParser('/dev/ttyCH341USB1', 9600, 1.0, False)  # USB-CAN 串口、波特率、读超时、调试开关；USB-CAN port, baudrate, timeout, debug flag.
-            parser.open_serial()
-            parser.send_at_commands(['AT+CG', 'AT+AT'])
-            self.publish_state('can_started')
-            self.get_logger().info(f'{GREEN}USB-CAN serial control started.{RESET}')
-
-            while rclpy.ok() and not self.shutdown_requested:
-                if not self.request_active:
-                    result = 'request_cleared'
+            # 初始化阶段：串口/AT 握手失败（会关闭串口）就一直重试，不放弃
+            while rclpy.ok() and not self.shutdown_requested and self.request_active:
+                try:
+                    parser = SerialCANParser('/dev/ttyCH341USB1', 9600, 1.0, False)  # USB-CAN 串口、波特率、读超时、调试开关；USB-CAN port, baudrate, timeout, debug flag.
+                    parser.open_serial()
+                    parser.send_at_commands(['AT+CG', 'AT+AT'])
                     break
-                if time.monotonic() >= deadline:
-                    result = 'timeout'
-                    self.get_logger().error(f'{RED}USB-CAN docking timed out after 180.0 s.{RESET}')
-                    break
+                except Exception as error:
+                    self.throttled_docking_retry_log(
+                        f'USB-CAN 未就绪或充电桩未对上，请检查充电设备与对接位置：{error}')
+                    if parser is not None:
+                        parser.close_serial()
+                    parser = None
+                    self.publish_state('docking_retry')
+                    time.sleep(self.docking_retry_interval)
 
-                frame = parser.read_frame(2.0)  # 0x182 引导帧等待超时，单位秒；0x182 guide frame wait timeout, in seconds.
-                if frame is None:
-                    self.publish_cmd_vel()
-                    self.throttled_can_wait_log()
-                    self.publish_state('can_waiting')
-                    continue
+            if parser is not None:
+                self.publish_state('can_started')
+                self.get_logger().info(f'{GREEN}USB-CAN serial control started.{RESET}')
+                deadline = time.monotonic() + 180.0  # USB-CAN 最后一米最长运行时间，单位秒；USB-CAN final docking max runtime, in seconds.
 
-                frame_count += 1
-                result = self.handle_can_frame(frame, frame_count)
-                if result is not None:
-                    break
-                result = 'running'
+                while rclpy.ok() and not self.shutdown_requested:
+                    if not self.request_active:
+                        result = 'request_cleared'
+                        break
+                    if time.monotonic() >= deadline:
+                        result = 'timeout'
+                        self.get_logger().error(f'{RED}USB-CAN docking timed out after 180.0 s.{RESET}')
+                        break
+
+                    frame = parser.read_frame(2.0)  # 0x182 引导帧等待超时，单位秒；0x182 guide frame wait timeout, in seconds.
+                    if frame is None:
+                        self.publish_cmd_vel()
+                        self.throttled_can_wait_log()
+                        self.publish_state('can_waiting')
+                        continue
+
+                    frame_count += 1
+                    result = self.handle_can_frame(frame, frame_count)
+                    if result is not None:
+                        break
+                    result = 'running'
         except Exception as error:
             result = 'error'
             self.get_logger().error(f'{RED}USB-CAN docking error: {error}{RESET}')
@@ -325,6 +341,13 @@ class AutochargeCoordinator(Node):
             return min(candidates, key=lambda item: item[0])[0]
         return max(candidates, key=lambda item: item[0])[0]
 
+    def battery_mode_label(self, now):
+        backup = self.source_voltages['backup']
+        fresh = backup is not None and now - self.source_voltage_times['backup'] <= self.voltage_source_fresh_seconds
+        if fresh:
+            return '双电池'
+        return '单电池·副过旧' if backup is not None else '单电池'
+
     def format_voltage_log(self, selected_voltage=None, selected_label=''):
         now = time.monotonic()
         parts = []
@@ -401,6 +424,12 @@ class AutochargeCoordinator(Node):
             self.last_can_wait_log = now
             self.get_logger().warn('Waiting for valid USB-CAN 0x182 frame.')
 
+    def throttled_docking_retry_log(self, message):
+        now = time.monotonic()
+        if now - self.last_docking_retry_log >= self.log_interval:
+            self.last_docking_retry_log = now
+            self.get_logger().warn(f'{YELLOW}{message}{RESET}')
+
     def throttled_can_frame_log(self, frame, frame_count):
         now = time.monotonic()
         if now - self.last_can_frame_log < 1.0:
@@ -420,14 +449,14 @@ class AutochargeCoordinator(Node):
             return
         self.last_return_to_charge_log = now
         self.get_logger().warn(
-            f'{YELLOW}{self.format_voltage_log(voltage, selected_label)}，过低，需要充电，正在返回 P 点充电。{RESET}')
+            f'{YELLOW}{self.format_voltage_log(voltage, selected_label)} [{self.battery_mode_label(now)}]，过低，需要充电，正在返回 P 点充电。{RESET}')
 
     def throttled_charging_log(self, voltage):
         now = time.monotonic()
         if now - self.last_charging_log < 5.0:
             return
         self.last_charging_log = now
-        self.get_logger().info(f'{GREEN}{self.format_voltage_log(voltage, "最低电压")}，正在充电...{RESET}')
+        self.get_logger().info(f'{GREEN}{self.format_voltage_log(voltage, "最低电压")} [{self.battery_mode_label(now)}]，正在充电...{RESET}')
 
     def stop(self):
         self.shutdown_requested = True
