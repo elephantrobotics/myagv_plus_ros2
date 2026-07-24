@@ -46,6 +46,8 @@
 #include "pluginlib/class_list_macros.hpp"
 #include "sensor_msgs/point_cloud2_iterator.hpp"
 #include "nav2_costmap_2d/costmap_math.hpp"
+#include "nav2_util/node_utils.hpp"
+#include "rclcpp/version.h"
 
 PLUGINLIB_EXPORT_CLASS(nav2_costmap_2d::ObstacleLayer, nav2_costmap_2d::Layer)
 
@@ -62,6 +64,10 @@ namespace nav2_costmap_2d
 
 ObstacleLayer::~ObstacleLayer()
 {
+  auto node = node_.lock();
+  if (dyn_params_handler_ && node) {
+    node->remove_on_set_parameters_callback(dyn_params_handler_.get());
+  }
   dyn_params_handler_.reset();
   for (auto & notifier : observation_notifiers_) {
     notifier.reset();
@@ -92,10 +98,15 @@ void ObstacleLayer::onInitialize()
   node->get_parameter(name_ + "." + "footprint_clearing_enabled", footprint_clearing_enabled_);
   node->get_parameter(name_ + "." + "min_obstacle_height", min_obstacle_height_);
   node->get_parameter(name_ + "." + "max_obstacle_height", max_obstacle_height_);
-  node->get_parameter(name_ + "." + "combination_method", combination_method_);
   node->get_parameter("track_unknown_space", track_unknown_space);
   node->get_parameter("transform_tolerance", transform_tolerance);
   node->get_parameter(name_ + "." + "observation_sources", topics_string);
+  double tf_filter_tolerance = nav2_util::declare_or_get_parameter(node, name_ + "." +
+      "tf_filter_tolerance", 0.05);
+
+  int combination_method_param{};
+  node->get_parameter(name_ + "." + "combination_method", combination_method_param);
+  combination_method_ = combination_method_from_int(combination_method_param);
 
   dyn_params_handler_ = node->add_on_set_parameters_callback(
     std::bind(
@@ -182,6 +193,7 @@ void ObstacleLayer::onInitialize()
     node->get_parameter(name_ + "." + source + "." + "raytrace_min_range", raytrace_min_range);
     node->get_parameter(name_ + "." + source + "." + "raytrace_max_range", raytrace_max_range);
 
+    topic = joinWithParentNamespace(topic);
 
     RCLCPP_DEBUG(
       logger_,
@@ -218,13 +230,33 @@ void ObstacleLayer::onInitialize()
       source.c_str(), topic.c_str(),
       global_frame_.c_str(), expected_update_rate, observation_keep_time);
 
-    rmw_qos_profile_t custom_qos_profile = rmw_qos_profile_sensor_data;
-    custom_qos_profile.depth = 50;
+    const auto custom_qos_profile = rclcpp::SensorDataQoS().keep_last(50);
 
     // create a callback for the topic
     if (data_type == "LaserScan") {
-      auto sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::LaserScan,
+      // For Kilted and Older Support from Message Filters API change
+      #if RCLCPP_VERSION_GTE(29, 6, 0)
+      std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::LaserScan>> sub;
+      #else
+      std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::LaserScan,
+        rclcpp_lifecycle::LifecycleNode>> sub;
+      #endif
+
+      // For Kilted compatibility in Message Filters API change
+      #if RCLCPP_VERSION_GTE(29, 6, 0)
+      sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::LaserScan>>(
+        node, topic, custom_qos_profile, sub_opt);
+      // For Jazzy compatibility in Message Filters API change
+      #elif RCLCPP_VERSION_GTE(29, 0, 0)
+      sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::LaserScan,
           rclcpp_lifecycle::LifecycleNode>>(node, topic, custom_qos_profile, sub_opt);
+      // For Humble and Older compatibility in Message Filters API change
+      #else
+      sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::LaserScan,
+          rclcpp_lifecycle::LifecycleNode>>(
+        node, topic, custom_qos_profile.get_rmw_qos_profile(), sub_opt);
+      #endif
+
       sub->unsubscribe();
 
       auto filter = std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>>(
@@ -249,11 +281,33 @@ void ObstacleLayer::onInitialize()
       observation_subscribers_.push_back(sub);
 
       observation_notifiers_.push_back(filter);
-      observation_notifiers_.back()->setTolerance(rclcpp::Duration::from_seconds(0.05));
+      observation_notifiers_.back()->setTolerance(rclcpp::Duration::from_seconds(
+          tf_filter_tolerance));
 
     } else {
-      auto sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2,
+      // For Kilted and Older Support from Message Filters API change
+      #if RCLCPP_VERSION_GTE(29, 6, 0)
+      std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> sub;
+      #else
+      std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2,
+        rclcpp_lifecycle::LifecycleNode>> sub;
+      #endif
+
+      // For Kilted compatibility in Message Filters API change
+      #if RCLCPP_VERSION_GTE(29, 6, 0)
+      sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(
+        node, topic, custom_qos_profile, sub_opt);
+      // For Jazzy compatibility in Message Filters API change
+      #elif RCLCPP_VERSION_GTE(29, 0, 0)
+      sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2,
           rclcpp_lifecycle::LifecycleNode>>(node, topic, custom_qos_profile, sub_opt);
+      // For Humble and Older compatibility in Message Filters API change
+      #else
+      sub = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2,
+          rclcpp_lifecycle::LifecycleNode>>(
+        node, topic, custom_qos_profile.get_rmw_qos_profile(), sub_opt);
+      #endif
+
       sub->unsubscribe();
 
       if (inf_is_valid) {
@@ -296,6 +350,9 @@ ObstacleLayer::dynamicParametersCallback(
   for (auto parameter : parameters) {
     const auto & param_type = parameter.get_type();
     const auto & param_name = parameter.get_name();
+    if (param_name.find(name_ + ".") != 0) {
+      continue;
+    }
 
     if (param_type == ParameterType::PARAMETER_DOUBLE) {
       if (param_name == name_ + "." + "min_obstacle_height") {
@@ -314,7 +371,7 @@ ObstacleLayer::dynamicParametersCallback(
       }
     } else if (param_type == ParameterType::PARAMETER_INTEGER) {
       if (param_name == name_ + "." + "combination_method") {
-        combination_method_ = parameter.as_int();
+        combination_method_ = combination_method_from_int(parameter.as_int());
       }
     }
   }
@@ -450,14 +507,8 @@ ObstacleLayer::updateBounds(
 
     const sensor_msgs::msg::PointCloud2 & cloud = *(obs.cloud_);
 
-    const unsigned int max_range_cells = cellDistance(obs.obstacle_max_range_);
-    const unsigned int min_range_cells = cellDistance(obs.obstacle_min_range_);
-
-    unsigned int x0, y0;
-    if (!worldToMap(obs.origin_.x, obs.origin_.y, x0, y0)) {
-      RCLCPP_DEBUG(logger_, "Sensor origin is out of map bounds");
-      continue;
-    }
+    double sq_obstacle_max_range = obs.obstacle_max_range_ * obs.obstacle_max_range_;
+    double sq_obstacle_min_range = obs.obstacle_min_range_ * obs.obstacle_min_range_;
 
     sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
     sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
@@ -478,30 +529,28 @@ ObstacleLayer::updateBounds(
         continue;
       }
 
-      // now we need to compute the map coordinates for the observation
-      unsigned int mx, my;
-      if (!worldToMap(px, py, mx, my)) {
-        RCLCPP_DEBUG(logger_, "Computing map coords failed");
-        continue;
-      }
-
-      // compute the distance from the hitpoint to the pointcloud's origin
-      // Calculate the distance in cell space to match the ray trace algorithm
-      // used for clearing obstacles (see Costmap2D::raytraceLine).
-      const int dx = static_cast<int>(mx) - static_cast<int>(x0);
-      const int dy = static_cast<int>(my) - static_cast<int>(y0);
-      const unsigned int dist = static_cast<unsigned int>(
-        std::hypot(static_cast<double>(dx), static_cast<double>(dy)));
+      // compute the squared distance from the hitpoint to the pointcloud's origin
+      double sq_dist =
+        (px -
+        obs.origin_.x) * (px - obs.origin_.x) + (py - obs.origin_.y) * (py - obs.origin_.y) +
+        (pz - obs.origin_.z) * (pz - obs.origin_.z);
 
       // if the point is far enough away... we won't consider it
-      if (dist > max_range_cells) {
+      if (sq_dist >= sq_obstacle_max_range) {
         RCLCPP_DEBUG(logger_, "The point is too far away");
         continue;
       }
 
-      // if the point is too close, do not consider it
-      if (dist < min_range_cells) {
+      // if the point is too close, do not conisder it
+      if (sq_dist < sq_obstacle_min_range) {
         RCLCPP_DEBUG(logger_, "The point is too close");
+        continue;
+      }
+
+      // now we need to compute the map coordinates for the observation
+      unsigned int mx, my;
+      if (!worldToMap(px, py, mx, my)) {
+        RCLCPP_DEBUG(logger_, "Computing map coords failed");
         continue;
       }
 
@@ -551,11 +600,14 @@ ObstacleLayer::updateCosts(
   }
 
   switch (combination_method_) {
-    case 0:  // Overwrite
+    case CombinationMethod::Overwrite:
       updateWithOverwrite(master_grid, min_i, min_j, max_i, max_j);
       break;
-    case 1:  // Maximum
+    case CombinationMethod::Max:
       updateWithMax(master_grid, min_i, min_j, max_i, max_j);
+      break;
+    case CombinationMethod::MaxWithoutUnknownOverwrite:
+      updateWithMaxWithoutUnknownOverwrite(master_grid, min_i, min_j, max_i, max_j);
       break;
     default:  // Nothing
       break;
@@ -644,7 +696,7 @@ ObstacleLayer::raytraceFreespace(
     return;
   }
 
-  // we can pre-compute the enpoints of the map outside of the inner loop... we'll need these later
+  // we can pre-compute the endpoints of the map outside of the inner loop... we'll need these later
   double origin_x = origin_x_, origin_y = origin_y_;
   double map_end_x = origin_x + size_x_ * resolution_;
   double map_end_y = origin_y + size_y_ * resolution_;
@@ -661,7 +713,7 @@ ObstacleLayer::raytraceFreespace(
     double wx = *iter_x;
     double wy = *iter_y;
 
-    // now we also need to make sure that the enpoint we're raytracing
+    // now we also need to make sure that the endpoint we're raytracing
     // to isn't off the costmap and scale if necessary
     double a = wx - ox;
     double b = wy - oy;

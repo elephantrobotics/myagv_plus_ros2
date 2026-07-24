@@ -28,30 +28,25 @@
 #include <utility>
 #include <vector>
 
-#include "message_filters/subscriber.h"
 #include "nav2_amcl/angleutils.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_amcl/pf/pf.hpp"
 #include "nav2_util/string_utils.hpp"
 #include "nav2_amcl/sensors/laser/laser.hpp"
-#include "tf2/convert.h"
+#include "rclcpp/node_options.hpp"
+#include "tf2/convert.hpp"
+#include "tf2/utils.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "tf2/LinearMath/Transform.h"
+#include "tf2/LinearMath/Transform.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/message_filter.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/create_timer_ros.h"
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#include "tf2/utils.h"
-#pragma GCC diagnostic pop
-
 #include "nav2_amcl/portable_utils.hpp"
 #include "nav2_util/validate_messages.hpp"
 
-using namespace std::placeholders;
 using rcl_interfaces::msg::ParameterType;
 using namespace std::chrono_literals;
 
@@ -227,6 +222,11 @@ AmclNode::AmclNode(const rclcpp::NodeOptions & options)
   add_parameter(
     "first_map_only", rclcpp::ParameterValue(false),
     "Set this to true, when you want to load a new map published from the map_server");
+
+  add_parameter(
+    "freespace_downsampling", rclcpp::ParameterValue(
+      false),
+    "Downsample the free space used by the Pose Generator. Use it with large maps to save memory");
 }
 
 AmclNode::~AmclNode()
@@ -307,7 +307,8 @@ AmclNode::on_deactivate(const rclcpp_lifecycle::State & /*state*/)
   pose_pub_->on_deactivate();
   particle_cloud_pub_->on_deactivate();
 
-  // reset dynamic parameter handler
+  // shutdown and reset dynamic parameter handler
+  remove_on_set_parameters_callback(dyn_params_handler_.get());
   dyn_params_handler_.reset();
 
   // destroy bond connection
@@ -328,7 +329,6 @@ AmclNode::on_cleanup(const rclcpp_lifecycle::State & /*state*/)
   global_loc_srv_.reset();
   initial_guess_srv_.reset();
   nomotion_update_srv_.reset();
-  executor_thread_.reset();  //  to make sure initial_pose_sub_ completely exit
   initial_pose_sub_.reset();
   laser_scan_connection_.disconnect();
   tf_listener_.reset();  //  listener may access lase_scan_filter_, so it should be reset earlier
@@ -405,7 +405,7 @@ AmclNode::checkElapsedTime(std::chrono::seconds check_interval, rclcpp::Time las
 }
 
 #if NEW_UNIFORM_SAMPLING
-std::vector<std::pair<int, int>> AmclNode::free_space_indices;
+std::vector<AmclNode::Point2D> AmclNode::free_space_indices;
 #endif
 
 bool
@@ -447,10 +447,10 @@ AmclNode::uniformPoseGenerator(void * arg)
 
 #if NEW_UNIFORM_SAMPLING
   unsigned int rand_index = drand48() * free_space_indices.size();
-  std::pair<int, int> free_point = free_space_indices[rand_index];
+  AmclNode::Point2D free_point = free_space_indices[rand_index];
   pf_vector_t p;
-  p.v[0] = MAP_WXGX(map, free_point.first);
-  p.v[1] = MAP_WYGY(map, free_point.second);
+  p.v[0] = MAP_WXGX(map, free_point.x);
+  p.v[1] = MAP_WYGY(map, free_point.y);
   p.v[2] = drand48() * 2 * M_PI - M_PI;
 #else
   double min_x, max_x, min_y, max_y;
@@ -536,6 +536,14 @@ AmclNode::initialPoseReceived(geometry_msgs::msg::PoseWithCovarianceStamped::Sha
       global_frame_id_.c_str());
     return;
   }
+  if (first_map_received_ && (abs(msg->pose.pose.position.x) > map_->size_x ||
+    abs(msg->pose.pose.position.y) > map_->size_y))
+  {
+    RCLCPP_ERROR(
+      get_logger(), "Received initialpose from message is out of the size of map. Rejecting.");
+    return;
+  }
+
   // Overriding last published pose to initial pose
   last_published_pose_ = *msg;
 
@@ -791,7 +799,7 @@ bool AmclNode::updateFilter(
   // min, max, and increment angles of the laser in the base frame.
   //
   // Construct min and max angles of laser, in the base_link frame.
-  // Here we set the roll pich yaw of the lasers.  We assume roll and pich are zero.
+  // Here we set the roll pitch yaw of the lasers.  We assume roll and pitch are zero.
   geometry_msgs::msg::QuaternionStamped min_q, inc_q;
   min_q.header.stamp = laser_scan->header.stamp;
   min_q.header.frame_id = nav2_util::strip_leading_slash(laser_scan->header.frame_id);
@@ -817,6 +825,15 @@ bool AmclNode::updateFilter(
   RCLCPP_DEBUG(
     get_logger(), "Laser %d angles in base frame: min: %.3f inc: %.3f", laser_index, angle_min,
     angle_increment);
+
+  // Check the validity of range_max, must > 0.0
+  if (laser_scan->range_max <= 0.0) {
+    RCLCPP_WARN(
+      get_logger(), "wrong range_max of laser_scan data: %f. The message could be malformed."
+      " Ignore this message and stop updating.",
+      laser_scan->range_max);
+    return false;
+  }
 
   // Apply range min/max thresholds, if the user supplied them
   if (laser_max_range_ > 0.0) {
@@ -1090,6 +1107,7 @@ AmclNode::initParameters()
   get_parameter("always_reset_initial_pose", always_reset_initial_pose_);
   get_parameter("scan_topic", scan_topic_);
   get_parameter("map_topic", map_topic_);
+  get_parameter("freespace_downsampling", freespace_downsampling_);
 
   save_pose_period_ = tf2::durationFromSec(1.0 / save_pose_rate);
   transform_tolerance_ = tf2::durationFromSec(tmp_tol);
@@ -1164,11 +1182,14 @@ AmclNode::dynamicParametersCallback(
   for (auto parameter : parameters) {
     const auto & param_type = parameter.get_type();
     const auto & param_name = parameter.get_name();
+    if (param_name.find('.') != std::string::npos) {
+      continue;
+    }
 
     if (param_type == ParameterType::PARAMETER_DOUBLE) {
       if (param_name == "alpha1") {
         alpha1_ = parameter.as_double();
-        //alpha restricted to be non-negative
+        // alpha restricted to be non-negative
         if (alpha1_ < 0.0) {
           RCLCPP_WARN(
             get_logger(), "You've set alpha1 to be negative,"
@@ -1178,7 +1199,7 @@ AmclNode::dynamicParametersCallback(
         reinit_odom = true;
       } else if (param_name == "alpha2") {
         alpha2_ = parameter.as_double();
-        //alpha restricted to be non-negative
+        // alpha restricted to be non-negative
         if (alpha2_ < 0.0) {
           RCLCPP_WARN(
             get_logger(), "You've set alpha2 to be negative,"
@@ -1188,7 +1209,7 @@ AmclNode::dynamicParametersCallback(
         reinit_odom = true;
       } else if (param_name == "alpha3") {
         alpha3_ = parameter.as_double();
-        //alpha restricted to be non-negative
+        // alpha restricted to be non-negative
         if (alpha3_ < 0.0) {
           RCLCPP_WARN(
             get_logger(), "You've set alpha3 to be negative,"
@@ -1198,7 +1219,7 @@ AmclNode::dynamicParametersCallback(
         reinit_odom = true;
       } else if (param_name == "alpha4") {
         alpha4_ = parameter.as_double();
-        //alpha restricted to be non-negative
+        // alpha restricted to be non-negative
         if (alpha4_ < 0.0) {
           RCLCPP_WARN(
             get_logger(), "You've set alpha4 to be negative,"
@@ -1208,7 +1229,7 @@ AmclNode::dynamicParametersCallback(
         reinit_odom = true;
       } else if (param_name == "alpha5") {
         alpha5_ = parameter.as_double();
-        //alpha restricted to be non-negative
+        // alpha restricted to be non-negative
         if (alpha5_ < 0.0) {
           RCLCPP_WARN(
             get_logger(), "You've set alpha5 to be negative,"
@@ -1419,12 +1440,14 @@ AmclNode::handleMapMessage(const nav_msgs::msg::OccupancyGrid & msg)
 void
 AmclNode::createFreeSpaceVector()
 {
+  int delta = freespace_downsampling_ ? 2 : 1;
   // Index of free space
   free_space_indices.resize(0);
-  for (int i = 0; i < map_->size_x; i++) {
-    for (int j = 0; j < map_->size_y; j++) {
+  for (int i = 0; i < map_->size_x; i += delta) {
+    for (int j = 0; j < map_->size_y; j += delta) {
       if (map_->cells[MAP_INDEX(map_, i, j)].occ_state == -1) {
-        free_space_indices.push_back(std::make_pair(i, j));
+        AmclNode::Point2D point = {i, j};
+        free_space_indices.push_back(point);
       }
     }
   }
@@ -1500,9 +1523,15 @@ AmclNode::initMessageFilters()
 {
   auto sub_opt = rclcpp::SubscriptionOptions();
   sub_opt.callback_group = callback_group_;
+
+  #if RCLCPP_VERSION_GTE(29, 6, 0)
+  laser_scan_sub_ = std::make_unique<message_filters::Subscriber<sensor_msgs::msg::LaserScan>>(
+    shared_from_this(), scan_topic_, rclcpp::SensorDataQoS(), sub_opt);
+  #else
   laser_scan_sub_ = std::make_unique<message_filters::Subscriber<sensor_msgs::msg::LaserScan,
       rclcpp_lifecycle::LifecycleNode>>(
     shared_from_this(), scan_topic_, rmw_qos_profile_sensor_data, sub_opt);
+  #endif
 
   laser_scan_filter_ = std::make_unique<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>>(
     *laser_scan_sub_, *tf_buffer_, odom_frame_id_, 10,
@@ -1544,23 +1573,29 @@ AmclNode::initPubSub()
 void
 AmclNode::initServices()
 {
-  global_loc_srv_ = create_service<std_srvs::srv::Empty>(
-    "reinitialize_global_localization",
-    std::bind(&AmclNode::globalLocalizationCallback, this, _1, _2, _3));
+  global_loc_srv_ = std::make_shared<nav2_util::ServiceServer<std_srvs::srv::Empty,
+      std::shared_ptr<nav2_util::LifecycleNode>>>(
+    "reinitialize_global_localization", shared_from_this(),
+    std::bind(&AmclNode::globalLocalizationCallback, this, std::placeholders::_1,
+      std::placeholders::_2, std::placeholders::_3));
 
-  initial_guess_srv_ = create_service<nav2_msgs::srv::SetInitialPose>(
-    "set_initial_pose",
-    std::bind(&AmclNode::initialPoseReceivedSrv, this, _1, _2, _3));
+  initial_guess_srv_ = std::make_shared<nav2_util::ServiceServer<nav2_msgs::srv::SetInitialPose,
+      std::shared_ptr<nav2_util::LifecycleNode>>>(
+    "set_initial_pose", shared_from_this(),
+    std::bind(&AmclNode::initialPoseReceivedSrv, this, std::placeholders::_1, std::placeholders::_2,
+      std::placeholders::_3));
 
-  nomotion_update_srv_ = create_service<std_srvs::srv::Empty>(
-    "request_nomotion_update",
-    std::bind(&AmclNode::nomotionUpdateCallback, this, _1, _2, _3));
+  nomotion_update_srv_ = std::make_shared<nav2_util::ServiceServer<std_srvs::srv::Empty,
+      std::shared_ptr<nav2_util::LifecycleNode>>>(
+    "request_nomotion_update", shared_from_this(),
+    std::bind(&AmclNode::nomotionUpdateCallback, this, std::placeholders::_1, std::placeholders::_2,
+      std::placeholders::_3));
 }
 
 void
 AmclNode::initOdometry()
 {
-  // TODO(mjeronimo): We should handle persistance of the last known pose of the robot. We could
+  // TODO(mjeronimo): We should handle persistence of the last known pose of the robot. We could
   // then read that pose here and initialize using that.
 
   // When pausing and resuming, remember the last robot pose so we don't start at 0:0 again

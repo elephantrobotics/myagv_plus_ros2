@@ -187,6 +187,8 @@ bool MyAGV_Plus::isValidCommand(Esp32Cmd cmd)
     case Esp32Cmd::SET_OUT_IO:
     case Esp32Cmd::GET_IN_IO:
     case Esp32Cmd::SET_FAN_STATE:
+    case Esp32Cmd::SET_PUMP_STATE:
+    case Esp32Cmd::SET_PUMP_IO:
       return true;
 
     default:

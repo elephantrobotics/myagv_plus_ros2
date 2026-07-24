@@ -69,20 +69,6 @@ public:
     const std::string & filter_info_topic);
 
   /**
-   * @brief Update the bounds of the master costmap by this layer's update dimensions
-   * @param robot_x X pose of robot
-   * @param robot_y Y pose of robot
-   * @param robot_yaw Robot orientation
-   * @param min_x X min map coord of the window to update
-   * @param min_y Y min map coord of the window to update
-   * @param max_x X max map coord of the window to update
-   * @param max_y Y max map coord of the window to update
-   */
-  void updateBounds(
-    double robot_x, double robot_y, double robot_yaw,
-    double * min_x, double * min_y, double * max_x, double * max_y) override;
-
-  /**
    * @brief Process the keepout layer at the current pose / bounds / grid
    */
   void process(
@@ -113,16 +99,15 @@ private:
   rclcpp::Subscription<nav2_msgs::msg::CostmapFilterInfo>::SharedPtr filter_info_sub_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr mask_sub_;
 
-  std::unique_ptr<Costmap2D> mask_costmap_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr filter_mask_;
 
-  std::string mask_frame_;  // Frame where mask located in
-  std::string global_frame_;  // Frame of currnet layer (master_grid)
+  std::string global_frame_;  // Frame of current layer (master_grid)
 
-  unsigned int x_{0};
-  unsigned int y_{0};
-  unsigned int width_{0};
-  unsigned int height_{0};
-  bool has_updated_data_{false};
+  bool override_lethal_cost_{false};  // If true, lethal cost will be overridden
+  unsigned char lethal_override_cost_{252};  // Value to override lethal cost with
+  bool last_pose_lethal_{false};  // If true, last pose was lethal
+  unsigned int lethal_state_update_min_x_{999999u}, lethal_state_update_min_y_{999999u};
+  unsigned int lethal_state_update_max_x_{0u}, lethal_state_update_max_y_{0u};
 };
 
 }  // namespace nav2_costmap_2d

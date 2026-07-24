@@ -37,7 +37,7 @@ def generate_launch_description():
         default_value="false",
         description="Enable CSI camera node"
     )
-    
+
     controller_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([

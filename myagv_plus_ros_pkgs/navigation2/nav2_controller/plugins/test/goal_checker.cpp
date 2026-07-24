@@ -39,8 +39,8 @@
 #include "nav2_controller/plugins/simple_goal_checker.hpp"
 #include "nav2_controller/plugins/stopped_goal_checker.hpp"
 #include "nav_2d_utils/conversions.hpp"
-#include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/lifecycle_node.hpp"
+#include "eigen3/Eigen/Geometry"
 
 using nav2_controller::SimpleGoalChecker;
 using nav2_controller::StoppedGoalChecker;
@@ -217,8 +217,7 @@ TEST(StoppedGoalChecker, get_tol_and_dynamic_params)
   results = rec_param->set_parameters_atomically(
     {rclcpp::Parameter("test2.xy_goal_tolerance", 200.0),
       rclcpp::Parameter("test2.yaw_goal_tolerance", 200.0),
-      rclcpp::Parameter("test2.stateful", true),
-      rclcpp::Parameter("test2.symmetric_yaw_tolerance", true)});
+      rclcpp::Parameter("test2.stateful", true)});
 
   rclcpp::spin_until_future_complete(
     x->get_node_base_interface(),
@@ -227,7 +226,6 @@ TEST(StoppedGoalChecker, get_tol_and_dynamic_params)
   EXPECT_EQ(x->get_parameter("test2.xy_goal_tolerance").as_double(), 200.0);
   EXPECT_EQ(x->get_parameter("test2.yaw_goal_tolerance").as_double(), 200.0);
   EXPECT_EQ(x->get_parameter("test2.stateful").as_bool(), true);
-  EXPECT_EQ(x->get_parameter("test2.symmetric_yaw_tolerance").as_bool(), true);
 
   // Test the dynamic parameters impacted the tolerances
   EXPECT_TRUE(sgc.getTolerances(pose_tol, vel_tol));
@@ -310,6 +308,23 @@ TEST(StoppedGoalChecker, is_reached)
   current_pose.position.x = 0.0;
   velocity.linear.x = 0.0;
 
+
+  // Current angular position is tolerance away from goal
+  auto quat =
+    (Eigen::AngleAxisd::Identity() * Eigen::AngleAxisd(0.25, Eigen::Vector3d::UnitZ())).coeffs();
+  // epsilon for orientation is a lot bigger than double limit, probably from TF getYaw
+  auto quat_epsilon =
+    (Eigen::AngleAxisd::Identity() *
+    Eigen::AngleAxisd(0.25 + 1.0E-15, Eigen::Vector3d::UnitZ())).coeffs();
+
+  current_pose.orientation.z = quat[2];
+  current_pose.orientation.w = quat[3];
+  velocity.angular.z = 0.25;
+  EXPECT_TRUE(sgc.isGoalReached(current_pose, goal_pose, velocity));
+  EXPECT_TRUE(gc.isGoalReached(current_pose, goal_pose, velocity));
+  sgc.reset();
+  gc.reset();
+
   // Current angular speed exceeds tolerance
   velocity.angular.z = 0.25 + std::numeric_limits<double>::epsilon();
   EXPECT_FALSE(sgc.isGoalReached(current_pose, goal_pose, velocity));
@@ -317,28 +332,23 @@ TEST(StoppedGoalChecker, is_reached)
   sgc.reset();
   gc.reset();
 
-  current_pose.orientation = nav2_util::geometry_utils::orientationAroundZAxis(0.25 + M_PI);
+  // Current angular position is further than tolerance away from goal
+  current_pose.orientation.z = quat_epsilon[2];
+  current_pose.orientation.w = quat_epsilon[3];
+  velocity.angular.z = 0.25;
   EXPECT_FALSE(sgc.isGoalReached(current_pose, goal_pose, velocity));
   EXPECT_FALSE(gc.isGoalReached(current_pose, goal_pose, velocity));
-
-  auto rec_param = std::make_shared<rclcpp::AsyncParametersClient>(
-    x->get_node_base_interface(), x->get_node_topics_interface(),
-    x->get_node_graph_interface(),
-    x->get_node_services_interface());
-  auto results = rec_param->set_parameters_atomically(
-    {rclcpp::Parameter("test2.symmetric_yaw_tolerance", true),
-      rclcpp::Parameter("test.symmetric_yaw_tolerance", true)});
-  rclcpp::spin_until_future_complete(
-    x->get_node_base_interface(),
-    results);
-  velocity.angular.z = 0.0;
-  EXPECT_TRUE(sgc.isGoalReached(current_pose, goal_pose, velocity));
-  EXPECT_TRUE(gc.isGoalReached(current_pose, goal_pose, velocity));
 }
 
 int main(int argc, char ** argv)
 {
+  ::testing::InitGoogleTest(&argc, argv);
+
   rclcpp::init(argc, argv);
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+
+  int result = RUN_ALL_TESTS();
+
+  rclcpp::shutdown();
+
+  return result;
 }

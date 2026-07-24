@@ -1,0 +1,49 @@
+name: cmake Windows
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+        build_type: [Release, Debug]
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install Conan
+      id: conan
+      uses: turtlebrowser/get-conan@main
+
+    - name: Create default profile
+      run: conan profile detect
+
+    - name: Install conan dependencies
+      run: conan install conanfile.py -s build_type=${{ matrix.build_type }} --build=missing --settings:host compiler.cppstd=17
+
+    - name: Normalize build type
+      shell: bash
+      run: echo "BUILD_TYPE_LOWERCASE=$(echo "${{ matrix.build_type }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+    - name: Configure CMake
+      shell: bash
+      run: cmake --preset conan-default
+
+    - name: Build
+      shell: bash
+      run: cmake --build --preset conan-${{ env.BUILD_TYPE_LOWERCASE }}
+
+    - name: Run tests
+      working-directory: ${{ github.workspace }}/build
+      run: $env:PATH+=";${{ matrix.build_type }}"; tests/${{ matrix.build_type }}/behaviortree_cpp_test.exe

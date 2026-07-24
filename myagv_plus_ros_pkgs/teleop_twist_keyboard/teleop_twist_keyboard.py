@@ -32,16 +32,12 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import sys
-import threading
+import select
+import time
 
 import geometry_msgs.msg
 import rclpy
-
-if sys.platform == 'win32':
-    import msvcrt
-else:
-    import termios
-    import tty
+from rclpy.node import Node
 
 
 msg = """
@@ -61,8 +57,6 @@ For Holonomic mode (strafing), hold down the shift key:
 
 t : up (+z)
 b : down (-z)
-
-anything else : stop
 
 q/z : increase/decrease max speeds by 10%
 w/x : increase/decrease only linear speed by 10%
@@ -102,136 +96,140 @@ speedBindings = {
 }
 
 
-def getKey(settings):
-    if sys.platform == 'win32':
-        # getwch() returns a string on Windows
-        key = msvcrt.getwch()
-    else:
+class TeleopKeyboard(Node):
+    def __init__(self, name):
+        super().__init__(name)
+
+        self.stamped = self.declare_parameter('stamped', True).value
+        self.frame_id = self.declare_parameter('frame_id', '').value
+        self.speed = self.declare_parameter('speed', 0.25).value
+        self.turn = self.declare_parameter('turn', 1.0).value
+        self.speed_limit = self.declare_parameter('speed_limit', 1.6).value
+        self.turn_limit = self.declare_parameter('turn_limit', 4.0).value
+        self.key_poll_timeout = self.declare_parameter('key_poll_timeout', 0.05).value
+        self.zero_publish_interval = self.declare_parameter('zero_publish_interval', 0.15).value
+
+        if self.stamped:
+            self.TwistMsg = geometry_msgs.msg.TwistStamped
+        else:
+            self.TwistMsg = geometry_msgs.msg.Twist
+
+        self.pub = self.create_publisher(self.TwistMsg, 'cmd_vel', 10)
+        self.settings = self.get_terminal_settings()
+
+    def get_terminal_settings(self):
+        if sys.platform == 'win32':
+            return None
+        import termios
+        return termios.tcgetattr(sys.stdin)
+
+    def restore_terminal_settings(self):
+        if sys.platform == 'win32' or self.settings is None:
+            return
+        import termios
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.settings)
+
+    def getKey(self, timeout):
+        if sys.platform == 'win32':
+            import msvcrt
+            return msvcrt.getwch()
+        import tty
+        import termios
         tty.setraw(sys.stdin.fileno())
-        # sys.stdin.read() returns a string on Linux
-        key = sys.stdin.read(1)
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-    return key
+        rlist, _, _ = select.select([sys.stdin], [], [], timeout)
+        key = sys.stdin.read(1) if rlist else ''
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.settings)
+        return key
 
+    def vels(self):
+        return 'currently:\tspeed %s\tturn %s ' % (self.speed, self.turn)
 
-def saveTerminalSettings():
-    if sys.platform == 'win32':
-        return None
-    return termios.tcgetattr(sys.stdin)
-
-
-def restoreTerminalSettings(old_settings):
-    if sys.platform == 'win32':
-        return
-    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-
-
-def vels(speed, turn):
-    return 'currently:\tspeed %s\tturn %s ' % (speed, turn)
+    def create_twist_msg(self, x, y, z, th):
+        twist_msg = self.TwistMsg()
+        if self.stamped:
+            twist_msg.header.stamp = self.get_clock().now().to_msg()
+            twist_msg.header.frame_id = self.frame_id
+            twist = twist_msg.twist
+        else:
+            twist = twist_msg
+        twist.linear.x = x * self.speed
+        twist.linear.y = y * self.speed
+        twist.linear.z = z * self.speed
+        twist.angular.z = th * self.turn
+        return twist_msg
 
 
 def main():
-    settings = saveTerminalSettings()
-
     rclpy.init()
-
-    node = rclpy.create_node('teleop_twist_keyboard')
-
-    # parameters
-    stamped = node.declare_parameter('stamped', False).value
-    frame_id = node.declare_parameter('frame_id', '').value
-    speed = node.declare_parameter('speed', 0.25).value
-    turn = node.declare_parameter('turn', 1.0).value
-    speed_limit = node.declare_parameter('speed_limit', 1.6).value
-    turn_limit = node.declare_parameter('turn_limit', 4.0).value
-    if not stamped and frame_id:
-        raise Exception("'frame_id' can only be set when 'stamped' is True")
-
-    if stamped:
-        TwistMsg = geometry_msgs.msg.TwistStamped
-    else:
-        TwistMsg = geometry_msgs.msg.Twist
-
-    pub = node.create_publisher(TwistMsg, 'cmd_vel', 10)
-
-    spinner = threading.Thread(target=rclpy.spin, args=(node,))
-    spinner.start()
+    teleop = TeleopKeyboard('teleop_twist_keyboard')
 
     x = 0.0
     y = 0.0
     z = 0.0
     th = 0.0
-    status = 0.0
-
-    twist_msg = TwistMsg()
-
-    if stamped:
-        twist = twist_msg.twist
-        twist_msg.header.stamp = node.get_clock().now().to_msg()
-        twist_msg.header.frame_id = frame_id
-    else:
-        twist = twist_msg
+    status = 0
+    last_motion_key_time = 0.0
+    motion_active = False
 
     try:
         print(msg)
-        print(vels(speed, turn))
+        print(teleop.vels())
+
         while True:
-            key = getKey(settings)
-            if key in moveBindings.keys():
+            key = teleop.getKey(teleop.key_poll_timeout)
+            now = time.monotonic()
+            should_publish = False
+
+            if key in moveBindings:
                 x = moveBindings[key][0]
                 y = moveBindings[key][1]
                 z = moveBindings[key][2]
                 th = moveBindings[key][3]
-            elif key in speedBindings.keys():
-                speed = min(speed_limit, speed * speedBindings[key][0])
-                turn = min(turn_limit, turn * speedBindings[key][1])
-
-                if speed == speed_limit:
+                last_motion_key_time = now
+                motion_active = True
+                should_publish = True
+            elif key in speedBindings:
+                teleop.speed = min(teleop.speed_limit, teleop.speed * speedBindings[key][0])
+                teleop.turn = min(teleop.turn_limit, teleop.turn * speedBindings[key][1])
+                if teleop.speed == teleop.speed_limit:
                     print("Linear speed limit reached!")
-                if turn == turn_limit:
+                if teleop.turn == teleop.turn_limit:
                     print("Angular speed limit reached!")
-
-                print(vels(speed, turn))
-                if (status == 14):
+                print(teleop.vels())
+                if status == 14:
                     print(msg)
                 status = (status + 1) % 15
+                should_publish = True
             else:
+                if key == '\x03':
+                    break
+                if key != '':
+                    x = 0.0
+                    y = 0.0
+                    z = 0.0
+                    th = 0.0
+                    motion_active = False
+                    should_publish = True
+
+            if motion_active and now - last_motion_key_time >= teleop.zero_publish_interval:
                 x = 0.0
                 y = 0.0
                 z = 0.0
                 th = 0.0
-                if (key == '\x03'):
-                    break
+                motion_active = False
+                should_publish = True
 
-            if stamped:
-                twist_msg.header.stamp = node.get_clock().now().to_msg()
-
-            twist.linear.x = x * speed
-            twist.linear.y = y * speed
-            twist.linear.z = z * speed
-            twist.angular.x = 0.0
-            twist.angular.y = 0.0
-            twist.angular.z = th * turn
-            pub.publish(twist_msg)
+            if should_publish:
+                teleop.pub.publish(teleop.create_twist_msg(x, y, z, th))
 
     except Exception as e:
         print(e)
 
     finally:
-        if stamped:
-            twist_msg.header.stamp = node.get_clock().now().to_msg()
-
-        twist.linear.x = 0.0
-        twist.linear.y = 0.0
-        twist.linear.z = 0.0
-        twist.angular.x = 0.0
-        twist.angular.y = 0.0
-        twist.angular.z = 0.0
-        pub.publish(twist_msg)
+        teleop.pub.publish(teleop.create_twist_msg(0, 0, 0, 0))
+        teleop.restore_terminal_settings()
+        teleop.destroy_node()
         rclpy.shutdown()
-        spinner.join()
-
-        restoreTerminalSettings(settings)
 
 
 if __name__ == '__main__':
