@@ -96,16 +96,30 @@ speedBindings = {
 }
 
 
+def clamp(value, low, high):
+    if value < low:
+        return low
+    if value > high:
+        return high
+    return value
+
+
 class TeleopKeyboard(Node):
     def __init__(self, name):
         super().__init__(name)
 
         self.stamped = self.declare_parameter('stamped', True).value
         self.frame_id = self.declare_parameter('frame_id', '').value
-        self.speed = self.declare_parameter('speed', 0.25).value
-        self.turn = self.declare_parameter('turn', 1.0).value
         self.speed_limit = self.declare_parameter('speed_limit', 1.6).value
-        self.turn_limit = self.declare_parameter('turn_limit', 4.0).value
+        self.turn_limit = self.declare_parameter('turn_limit', 7.27).value
+        self.speed_limit_min = self.declare_parameter('speed_limit_min', 0.1).value
+        self.turn_limit_min = self.declare_parameter('turn_limit_min', 0.1).value
+        self.speed = clamp(
+            self.declare_parameter('speed', 0.25).value,
+            self.speed_limit_min, self.speed_limit)
+        self.turn = clamp(
+            self.declare_parameter('turn', 1.0).value,
+            self.turn_limit_min, self.turn_limit)
         self.key_poll_timeout = self.declare_parameter('key_poll_timeout', 0.05).value
         self.zero_publish_interval = self.declare_parameter('zero_publish_interval', 0.15).value
 
@@ -189,12 +203,20 @@ def main():
                 motion_active = True
                 should_publish = True
             elif key in speedBindings:
-                teleop.speed = min(teleop.speed_limit, teleop.speed * speedBindings[key][0])
-                teleop.turn = min(teleop.turn_limit, teleop.turn * speedBindings[key][1])
+                teleop.speed = clamp(
+                    teleop.speed * speedBindings[key][0],
+                    teleop.speed_limit_min, teleop.speed_limit)
+                teleop.turn = clamp(
+                    teleop.turn * speedBindings[key][1],
+                    teleop.turn_limit_min, teleop.turn_limit)
                 if teleop.speed == teleop.speed_limit:
-                    print("Linear speed limit reached!")
+                    print("Linear speed upper limit reached!")
+                elif teleop.speed == teleop.speed_limit_min:
+                    print("Linear speed lower limit reached!")
                 if teleop.turn == teleop.turn_limit:
-                    print("Angular speed limit reached!")
+                    print("Angular speed upper limit reached!")
+                elif teleop.turn == teleop.turn_limit_min:
+                    print("Angular speed lower limit reached!")
                 print(teleop.vels())
                 if status == 14:
                     print(msg)
