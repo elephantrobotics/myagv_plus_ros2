@@ -1,0 +1,24 @@
+waypoints:
+  O:
+  - 0.797201
+  - 0.061594
+  - 0.004699
+  - 0.999989
+  A:
+  - 0.485967
+  - -0.40654
+  - -0.69849
+  - 0.71562
+  B:
+  - 0.0193
+  - -0.452053
+  - -0.690593
+  - 0.723244
+city_to_waypoint:
+  北京市: A    # Beijing
+  大连市: A    # Dalian
+  上海市: A    # Shanghai
+  南京市: B    # Nanjing
+  武汉市: B    # Wuhan
+  东莞市: B    # Dongguan
+  广州市: B    # Guangzhou

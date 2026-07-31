@@ -1,11 +1,16 @@
 amcl:
   ros__parameters:
     use_sim_time: False
-    alpha1: 0.4
-    alpha2: 0.3
-    alpha3: 0.1
-    alpha4: 0.1
-    alpha5: 0.04
+    # 里程计旋转噪声 alpha1 / Odometry rotation noise alpha1, 调整 AMCL 对旋转里程计误差的信任度 / adjusts AMCL trust in rotational odometry error
+    alpha1: 0.4  # 初始值 / Initial value: 0.2
+    # 里程计平移引起旋转噪声 alpha2 / Rotation noise from translation alpha2, 调整平移运动对航向估计的影响 / adjusts translation effect on heading estimation
+    alpha2: 0.3  # 初始值 / Initial value: 0.2
+    # 里程计平移噪声 alpha3 / Odometry translation noise alpha3, 调整 AMCL 对平移里程计误差的信任度 / adjusts AMCL trust in translational odometry error
+    alpha3: 0.1  # 初始值 / Initial value: 0.2
+    # 里程计旋转引起平移噪声 alpha4 / Translation noise from rotation alpha4, 调整旋转运动对位置估计的影响 / adjusts rotation effect on position estimation
+    alpha4: 0.1  # 初始值 / Initial value: 0.2
+    # 全向运动模型侧向噪声 alpha5 / Omni-model lateral noise alpha5, 保留低侧向噪声以适配当前定位模型 / keeps low lateral noise for the current localization model
+    alpha5: 0.04  # 初始值 / Initial value: 0.2
     base_frame_id: "base_footprint"
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
@@ -14,10 +19,13 @@ amcl:
     global_frame_id: "map"
     lambda_short: 0.1
     laser_likelihood_max_dist: 2.0
-    laser_max_range: 10.0
-    laser_min_range: 0.2
+    # 激光匹配最大有效距离 / Maximum valid laser matching range, 限制远距离无效数据对粒子权重的影响 / limits distant invalid data impact on particle weights
+    laser_max_range: 10.0  # 初始值 / Initial value: not set
+    # 激光匹配最小有效距离 / Minimum valid laser matching range, 过滤雷达近距离盲区数据 / filters lidar near-field blind-zone data
+    laser_min_range: 0.2  # 初始值 / Initial value: -1.0
     laser_model_type: "likelihood_field"
-    max_beams: 90
+    # 每次定位更新采样的激光束数量 / Number of laser beams sampled per localization update, 增加定位匹配所使用的观测信息 / increases observation information used for localization matching
+    max_beams: 90  # 初始值 / Initial value: laser_max_beams=100
     max_particles: 2000
     min_particles: 500
     odom_frame_id: "odom"
@@ -28,16 +36,21 @@ amcl:
     resample_interval: 1
     robot_model_type: "nav2_amcl::OmniMotionModel"
     save_pose_rate: 0.5
-    sigma_hit: 0.04
+    # 激光命中模型标准差 / Laser hit model standard deviation, 调节激光观测偏差对粒子权重的敏感程度 / adjusts particle-weight sensitivity to laser observation error
+    sigma_hit: 0.04  # 初始值 / Initial value: laser_sigma_hit=0.2
     tf_broadcast: true
-    transform_tolerance: 0.3
-    update_min_a: 0.04
-    update_min_d: 0.015
+    # TF 变换容忍时间 / TF transform tolerance, 降低定位 TF 外推等待窗口以减少延迟 / reduces localization TF extrapolation wait window
+    transform_tolerance: 0.3  # 初始值 / Initial value: 1.0 s
+    # 触发定位更新的最小旋转角度 / Minimum rotation angle triggering localization update, 提高小角度旋转时的定位更新频率 / increases localization update frequency during small rotations
+    update_min_a: 0.04  # 初始值 / Initial value: 0.2 rad
+    # 触发定位更新的最小平移距离 / Minimum translation distance triggering localization update, 提高低速平移时的定位更新频率 / increases localization update frequency during slow translation
+    update_min_d: 0.015  # 初始值 / Initial value: 0.25 m
     z_hit: 0.7
     z_max: 0.001
     z_rand: 0.059
     z_short: 0.24
-    set_initial_pose: False
+    # 是否由 AMCL 自动发布初始位姿 / Whether AMCL publishes initial pose automatically, 关闭自动初始位姿以避免覆盖人工定位 / disables automatic initial pose to avoid overriding manual localization
+    set_initial_pose: False  # 初始值 / Initial value: not set
     initial_pose.x: 0.0
     initial_pose.y: 0.0
     initial_pose.z: 0.0
@@ -92,7 +105,8 @@ controller_server:
     costmap_update_timeout: 0.30
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
-    min_theta_velocity_threshold: 0.001
+    # 里程计角速度死区阈值 / Odometry angular velocity deadband threshold, 过滤过小角速度避免控制器误判微小旋转有效 / filters tiny angular velocity to avoid false rotation feedback
+    min_theta_velocity_threshold: 0.03  # 初始值 / Initial value: 0.001
     failure_tolerance: 0.3
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
@@ -102,54 +116,57 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.15
-      movement_time_allowance: 8.0
+      # 判定导航有进展的最小移动距离 / Minimum movement distance considered progress, 减小阈值以适配小车低速调头和短距离路网段 / lowers threshold for slow turning and short route segments
+      required_movement_radius: 0.03  # 初始值 / Initial value: 0.1 m
+      # 判定导航无进展的等待时间 / Time allowance before declaring no progress, 缩短失败检测时间避免长时间卡住 / shortens failure detection time to avoid long stalls
+      movement_time_allowance: 25.0  # 初始值 / Initial value: 30.0 s
 
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.05
-      yaw_goal_tolerance: 0.55
+      # 到达目标的位置容差 / Goal position tolerance, 提高点到点与末端位姿到达精度 / improves point-to-point and final-pose arrival accuracy
+      xy_goal_tolerance: 0.03  # 初始值 / Initial value: 0.25 m
+      # 到达目标的航向角容差 / Goal heading tolerance, 放宽普通导航末端角度以交给后续精校或二维码对齐处理 / relaxes final heading for later refinement or marker alignment
+      yaw_goal_tolerance: 0.8  # 初始值 / Initial value: 0.25 rad
 
     FollowPath:
-      plugin: "dwb_core::DWBLocalPlanner"
-      debug_trajectory_details: True
-      min_vel_x: -0.01
-      min_vel_y: 0.0
-      max_vel_x: 0.26
-      max_vel_y: 0.0
-      max_vel_theta: 0.5
-      min_speed_xy: 0.0
-      max_speed_xy: 0.26
-      min_speed_theta: 0.0
-      acc_lim_x: 2.5
-      acc_lim_y: 0.0
-      acc_lim_theta: 2.8
-      decel_lim_x: -2.5
-      decel_lim_y: 0.0
-      decel_lim_theta: -2.8
-      vx_samples: 20
-      vy_samples: 5
-      vtheta_samples: 40
-      sim_time: 1.7
-      linear_granularity: 0.05
-      angular_granularity: 0.025
-      transform_tolerance: 0.1
-      xy_goal_tolerance: 0.03
-      trans_stopped_velocity: 0.01
-      short_circuit_trajectory_evaluation: True
-      stateful: True
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
-      PathAlign.scale: 23.0
-      PathAlign.forward_point_distance: 0.1
-      GoalAlign.scale: 18.0
-      GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 32.0
-      GoalDist.scale: 24.0
-      RotateToGoal.scale: 32.0
-      RotateToGoal.slowing_factor: 5.0
-      RotateToGoal.lookahead_time: -1.0
+      # 局部控制器插件 / Local controller plugin, 使用 RPP 提升路网路径跟踪和调头对向能力 / uses RPP for route path tracking and heading alignment
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"  # 初始值 / Initial value: nav2_mppi_controller::MPPIController
+      # RPP 期望线速度 / RPP desired linear velocity, 提高物流路段巡航速度 / increases route cruise speed
+      desired_linear_vel: 0.25  # 初始值 / Initial value: not set
+      # RPP 前视距离 / RPP lookahead distance, 减小前视距离以提高路网贴线能力 / reduces lookahead distance for tighter route tracking
+      lookahead_dist: 0.35  # 参考值 / Reference value: 0.5
+      # RPP 最小前视距离 / RPP minimum lookahead distance, 限制低速时最小跟踪目标距离 / limits minimum tracking target distance at low speed
+      min_lookahead_dist: 0.2  # 参考值 / Reference value: 0.25
+      # RPP 最大前视距离 / RPP maximum lookahead distance, 限制高速时最大跟踪目标距离 / limits maximum tracking target distance at higher speed
+      max_lookahead_dist: 0.6  # 参考值 / Reference value: 0.9
+      lookahead_time: 1.5
+      # 是否启用路径朝向预旋转 / Whether to rotate to path heading first, 调头时先原地对准路网方向再跟踪路径 / rotates to route heading before path tracking
+      use_rotate_to_heading: true  # 初始值 / Initial value: not set
+      # RPP 原地对向目标角速度 / RPP rotate-to-heading target angular velocity, 缩短调头和起步对向时间 / shortens heading alignment time during turns and starts
+      rotate_to_heading_angular_vel: 1.5  # 初始值 / Initial value: not set
+      # RPP TF 变换容忍时间 / RPP TF transform tolerance, 提高路径跟踪时 TF 查询容忍度 / increases TF lookup tolerance during path tracking
+      transform_tolerance: 0.5  # 初始值 / Initial value: 0.1 s
+      use_velocity_scaled_lookahead_dist: true
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 0.35
+      use_collision_detection: false
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      use_regulated_linear_velocity_scaling: false
+      use_cost_regulated_linear_velocity_scaling: false
+      regulated_linear_scaling_min_radius: 0.05
+      regulated_linear_scaling_min_speed: 0.25
+      use_fixed_curvature_lookahead: false
+      curvature_lookahead_dist: 1.0
+      # RPP 触发原地对向的最小角度 / Minimum angle to trigger rotate-to-heading, 让较小偏角也先对准路网方向 / allows smaller heading errors to trigger route heading alignment
+      rotate_to_heading_min_angle: 0.698  # 初始值 / Initial value: not set
+      # RPP 原地对向最大角加速度 / RPP maximum angular acceleration for heading alignment, 提高角速度爬升速度让调头更有力 / increases angular velocity ramp-up for stronger turning
+      max_angular_accel: 3.2  # 初始值 / Initial value: not set
+      max_robot_pose_search_dist: 10.0
+      interpolate_curvature_after_goal: false
+      cost_scaling_dist: 0.08
+      cost_scaling_gain: 1.0
+      inflation_cost_scaling_factor: 3.0
 
 local_costmap:
   local_costmap:
@@ -162,7 +179,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      footprint: "[[0.17, 0.12], [0.17,-0.12], [-0.17, -0.12], [-0.17, 0.12]]"
+      footprint: "[[0.18, 0.12], [0.18,-0.12], [-0.18, -0.12], [-0.18, 0.12]]"
       plugins: ["voxel_layer", "inflation_layer"]
       filters: ["keepout_filter"]
       keepout_filter:
@@ -173,8 +190,8 @@ local_costmap:
         lethal_override_cost: 200
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 4.0
-        inflation_radius: 0.25
+        cost_scaling_factor: 3.8
+        inflation_radius: 0.21
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -194,7 +211,7 @@ local_costmap:
           raytrace_max_range: 3.0
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.295
       static_layer:
         map_subscribe_transient_local: True
       always_send_full_costmap: True
@@ -208,7 +225,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       use_sim_time: False
-      footprint: "[[0.17, 0.12], [0.17,-0.12], [-0.17, -0.12], [-0.17, 0.12]]"
+      footprint: "[[0.18, 0.12], [0.18,-0.12], [-0.18, -0.12], [-0.18, 0.12]]" 
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -234,17 +251,17 @@ global_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
+          raytrace_max_range: 4.2
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.295
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 4.0
-        inflation_radius: 0.25
+        cost_scaling_factor: 3.8
+        inflation_radius: 0.21
       always_send_full_costmap: True
       service_introspection_mode: "disabled"
 
@@ -365,16 +382,41 @@ waypoint_follower:
       enabled: True
       waypoint_pause_duration: 200
 
+route_server:
+  ros__parameters:
+    # 路网起点/终点达成半径 / Route boundary node achievement radius, 收紧起终点节点判定避免过早跳点 / tightens start and goal node achievement to avoid early node switching
+    boundary_radius_to_achieve_node: 1.0  # 初始值 / Initial value: 1.0 m
+    # 路网中间节点达成半径 / Route intermediate node achievement radius, 收紧中间节点判定以提高按路网行驶约束 / tightens intermediate node achievement for stricter route following
+    radius_to_achieve_node: 2.0  # 初始值 / Initial value: 2.0 m
+    smooth_corners: true
+    operations: ["AdjustSpeedLimit", "ReroutingService", "CollisionMonitor"]
+    ReroutingService:
+      plugin: "nav2_route::ReroutingService"
+    AdjustSpeedLimit:
+      plugin: "nav2_route::AdjustSpeedLimit"
+    CollisionMonitor:
+      plugin: "nav2_route::CollisionMonitor"
+      max_collision_dist: 3.0
+    edge_cost_functions: ["DistanceScorer", "CostmapScorer"]
+    DistanceScorer:
+      plugin: "nav2_route::DistanceScorer"
+    CostmapScorer:
+      plugin: "nav2_route::CostmapScorer"
+
 velocity_smoother:
   ros__parameters:
     use_sim_time: False
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.26, 0.0, 0.5]
-    min_velocity: [-0.26, 0.0, -0.5]
-    max_accel: [2.5, 0.0, 3.2]
-    max_decel: [-2.5, 0.0, -3.2]
+    # 平滑器最大速度限制 / Velocity smoother maximum velocity limit, 避免截断 RPP 线速度和调头角速度 / avoids clipping RPP linear speed and heading-turn angular speed
+    max_velocity: [0.26, 0.0, 1.2]  # 初始值 / Initial value: [0.26, 0.0, 0.5]
+    # 平滑器最小速度限制 / Velocity smoother minimum velocity limit, 同步放宽反向角速度和线速度下限 / expands negative velocity limits consistently
+    min_velocity: [-0.26, 0.0, -1.2]  # 初始值 / Initial value: [-0.26, 0.0, -0.5]
+    # 平滑器最大加速度限制 / Velocity smoother maximum acceleration limit, 提高角加速度让调头响应更快 / raises angular acceleration for faster heading response
+    max_accel: [2.5, 0.0, 5.0]  # 初始值 / Initial value: [2.5, 0.0, 3.2]
+    # 平滑器最大减速度限制 / Velocity smoother maximum deceleration limit, 同步放宽角速度减速能力 / expands angular deceleration consistently
+    max_decel: [-2.5, 0.0, -5.0]  # 初始值 / Initial value: [-2.5, 0.0, -3.2]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
@@ -398,7 +440,7 @@ collision_monitor:
       type: "polygon"
       action_type: "approach"
       footprint_topic: "local_costmap/published_footprint"
-      time_before_collision: 1.2
+      time_before_collision: 0.0
       simulation_time_step: 0.1
       min_points: 6
       visualize: False
