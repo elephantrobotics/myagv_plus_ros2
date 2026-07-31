@@ -58,7 +58,7 @@ class LogisticsRouteMission(Node):
         self.arm_fallback_height = 92.0  # 视觉高度不可用时的兜底高抓；Low packages are selected by QR vision.
         self.retreat_distance = 0.08  # 机械臂取/放后后退距离，单位米；Retreat distance after pick/place, in meters.
         self.retreat_speed = 0.15  # 机械臂取/放后后退速度，单位 m/s；Retreat speed after pick/place, in m/s.
-        self.arm_port = '/dev/ttyACM1'  # 机械臂串口；Arm serial port.
+        self.arm_port = self.resolve_arm_port()  # 机械臂串口选择；Arm serial port selection.
         self.arm_baudrate = 115200  # 机械臂串口波特率；Arm serial baudrate.
         self.qr_camera = '/dev/video1'  # 二维码相机设备；QR camera device.
         self.qr_timeout = 50.0  # 二维码识别超时，单位秒；QR scan timeout, in seconds.
@@ -102,6 +102,13 @@ class LogisticsRouteMission(Node):
         self.warn_if_pickup_is_destination()
         threading.Thread(target=self.startup_and_run, daemon=True).start()
         self.get_logger().info('Logistics node started. Checking subsystems before departure.')
+
+    def resolve_arm_port(self):
+        controller_device = '/dev/myagvplus_controller'
+        controller = Path(controller_device).resolve().name
+        port = '/dev/ttyACM1' if controller == 'ttyACM0' else '/dev/ttyACM0'
+        self.get_logger().info(f'Arm serial port {port} ({controller_device} -> {controller}).')
+        return port
 
     def camera_image_cb(self, msg):
         self.last_camera_image_time = time.monotonic()
