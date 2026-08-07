@@ -567,6 +567,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /waypoints
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: ChargerMarker
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_marker
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -598,6 +610,13 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /clicked_point
     - Class: nav2_rviz_plugins/GoalTool
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /charger_position_update
   Transformation:
     Current:
       Class: rviz_default_plugins/TF

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from collections import deque
+from pathlib import Path
 import sys
 import threading
 import time
@@ -74,8 +75,16 @@ class AutochargeCoordinator(Node):
             f'stable_seconds={self.stable_seconds:.1f}, '
             f'warning={self.warning_voltage:.1f} V, recover={self.recover_voltage:.1f} V')
         self.get_logger().info(
-            'USB-CAN docking gate: ready_topic=autocharge/ready, '
-            'port=/dev/ttyCH341USB1, cmd_vel=/cmd_vel')
+            f'USB-CAN docking gate: ready_topic=autocharge/ready, '
+            f'port={self.resolve_can_port()}, cmd_vel=/cmd_vel')
+
+    def resolve_can_port(self):
+        esp32_device = '/dev/myagvplus_esp32'
+        esp32 = Path(esp32_device).resolve().name
+        port = '/dev/ttyCH341USB0' if esp32 == 'ttyCH341USB1' else '/dev/ttyCH341USB1'
+        if esp32 not in ('ttyCH341USB0', 'ttyCH341USB1'):
+            port = '/dev/ttyCH341USB0'
+        return port
 
     def voltage_cb(self, msg, source):
         now = time.monotonic()
@@ -188,7 +197,7 @@ class AutochargeCoordinator(Node):
             # 初始化阶段：串口/AT 握手失败（会关闭串口）就一直重试，不放弃
             while rclpy.ok() and not self.shutdown_requested and self.request_active:
                 try:
-                    parser = SerialCANParser('/dev/ttyCH341USB1', 9600, 1.0, False)  # USB-CAN 串口、波特率、读超时、调试开关；USB-CAN port, baudrate, timeout, debug flag.
+                    parser = SerialCANParser(self.resolve_can_port(), 9600, 1.0, False)  # USB-CAN 串口、波特率、读超时、调试开关；USB-CAN port, baudrate, timeout, debug flag.
                     parser.open_serial()
                     parser.send_at_commands(['AT+CG', 'AT+AT'])
                     break
