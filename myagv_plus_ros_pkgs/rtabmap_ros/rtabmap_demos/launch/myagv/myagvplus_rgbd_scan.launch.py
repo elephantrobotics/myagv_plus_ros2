@@ -37,7 +37,7 @@ def generate_launch_description():
           'subscribe_scan':True,
           'use_action_for_goal':True,
           'approx_sync':True,
-          'sync_queue_size': 10,
+          'sync_queue_size': 50,
           # RTAB-Map's parameters should be strings:
           'Reg/Strategy':'1',
           'Reg/Force3DoF':'true',
