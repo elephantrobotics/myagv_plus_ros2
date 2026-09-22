@@ -32,6 +32,10 @@ YAML_FILE = os.path.join(CONFIG_DIR, 'nav_goal_params.yaml')
 DOCKING_STALL_TIMEOUT = 60.0
 DOCKING_TOTAL_TIMEOUT = 180.0
 STATUS_PRINT_INTERVAL = 0.5
+DOCKING_REVERSE_SPEED_LIMIT = 0.10
+DOCKING_CONTACT_REVERSE_SPEED_LIMIT = 0.05
+DOCKING_TURN_SPEED_LIMIT = 0.10
+PRESSURE_RETRY_TIMEOUT = 60.0
 
 MODE_NAMES = {
     0x01: 'normal',
@@ -99,7 +103,16 @@ class CombinedAutoRecharger(Node):
         self.navigation_active = False
         self.serial_control_active = False
         self.parser = None
-        self.charge_current_threshold = 180.0
+        self.charge_current_threshold = 600.0
+        self.charge_confirm_duration = float(
+            self.declare_parameter('charge_confirm_duration_sec', 1.0).value)
+        self.charge_frame_timeout = float(
+            self.declare_parameter('charge_frame_timeout_sec', 0.5).value)
+        for name, value in (
+                ('charge_confirm_duration_sec', self.charge_confirm_duration),
+                ('charge_frame_timeout_sec', self.charge_frame_timeout)):
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f'{name} must be finite and greater than zero')
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -330,6 +343,8 @@ class CombinedAutoRecharger(Node):
             last_progress = time.time()
             last_status_key = None
             last_status_print = 0.0
+            charge_confirm_start = None
+            last_frame_time = None
 
             while self.serial_control_active:
                 if time.time() - docking_start >= DOCKING_TOTAL_TIMEOUT:
@@ -344,11 +359,18 @@ class CombinedAutoRecharger(Node):
                                f'(mode 0x{(prev_mode or 0):02X}) - stopped{RESET}')
                     break
 
-                frame = self.parser.read_frame(2.0)
+                frame = self.parser.read_frame(min(2.0, self.charge_frame_timeout))
                 if frame is None:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
+                    charge_confirm_start = None
+                    last_frame_time = None
                     continue
 
+                frame_time = time.monotonic()
+                if last_frame_time is not None and \
+                        frame_time - last_frame_time > self.charge_frame_timeout:
+                    charge_confirm_start = None
+                last_frame_time = frame_time
                 mode = frame['mode']
                 bits = frame['infrared_bits']
 
@@ -371,18 +393,32 @@ class CombinedAutoRecharger(Node):
 
                 if frame['actual_current'] >= self.charge_current_threshold:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{GREEN}Charging current detected: '
-                               f'{frame["actual_current"]:.1f} mA - docking complete{RESET}')
-                    break
+                    last_mode = None
+                    if charge_confirm_start is None:
+                        charge_confirm_start = frame_time
+                    elif frame_time - charge_confirm_start >= self.charge_confirm_duration:
+                        safe_print(f'{GREEN}Charging current detected: '
+                                   f'{frame["actual_current"]:.1f} mA - docking complete{RESET}')
+                        break
+                    continue
+
+                charge_confirm_start = None
 
                 if bits[7] != 0:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{YELLOW}Charging flag - stopped{RESET}')
-                    break
+                    if last_mode != 'charging_flag':
+                        safe_print(f'{YELLOW}Charging flag - stopped{RESET}')
+                    last_mode = 'charging_flag'
+                    continue
 
                 if mode == 0x01:
+                    reverse_limit = (DOCKING_CONTACT_REVERSE_SPEED_LIMIT if pressure_total_start
+                                     else DOCKING_REVERSE_SPEED_LIMIT)
+                    linear_x = max(frame['x_speed'], -reverse_limit)
+                    angular_z = max(-DOCKING_TURN_SPEED_LIMIT,
+                                    min(frame['z_speed'], DOCKING_TURN_SPEED_LIMIT))
                     self.cmd_vel_pub.publish(
-                        self.make_twist_stamped(frame['x_speed'], frame['z_speed']))
+                        self.make_twist_stamped(linear_x, angular_z))
                     if last_mode != 0x01:
                         phase = 2 if pressure_total_start and time.time() - pressure_total_start >= 5.0 else 1
                         if docking_phase_printed < phase:
@@ -398,7 +434,7 @@ class CombinedAutoRecharger(Node):
                         last_mode = 0xBB
                         pressure_start = now
                     total_elapsed = now - pressure_total_start
-                    if total_elapsed >= 10.0:
+                    if total_elapsed >= PRESSURE_RETRY_TIMEOUT:
                         self.cmd_vel_pub.publish(self.make_twist_stamped())
                         safe_print(f'{RED}Pressure retry timeout - stopped{RESET}')
                         break
@@ -412,8 +448,9 @@ class CombinedAutoRecharger(Node):
                         last_mode = None
                 elif mode == 0xAA:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{GREEN}Charging zone reached - docking complete{RESET}')
-                    break
+                    if last_mode != 0xAA:
+                        safe_print(f'{YELLOW}Charging zone reached - waiting for charging current{RESET}')
+                        last_mode = 0xAA
                 elif mode == 0xCF:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
                     safe_print(f'{RED}Emergency stop{RESET}')

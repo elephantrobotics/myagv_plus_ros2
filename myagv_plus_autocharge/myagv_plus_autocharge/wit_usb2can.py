@@ -31,7 +31,7 @@ class SerialCANParser:
         self.timeout = timeout  # 超时设置
         self.ser = None  # 串口对象
         self.buffer = bytearray()  # 存储当前读取的字节
-        self.at_retry_timeout = 30.0  # AT 握手重试总时长（秒）
+        self.at_retry_timeout = 60.0  # AT 握手重试总时长（秒）
         self.debug = debug
 
         # 存储实时数据
