@@ -194,7 +194,7 @@ class CombinedAutoRecharger(Node):
             time.sleep(dt)
 
         if not xs:
-            safe_print(f'{RED}Failed to sample pose. Is AMCL running?{RESET}')
+            safe_print(f'{RED}Unable to save the charging point. Please check localization.{RESET}')
             return
 
         xs.sort(); ys.sort(); zs.sort(); ws.sort()
@@ -298,7 +298,7 @@ class CombinedAutoRecharger(Node):
             goal_pose.pose.orientation.w = goal_qw
 
             if not self.nav_client.wait_for_server(timeout_sec=5.0):
-                safe_print(f'{RED}NavigateToPose action server not available{RESET}')
+                safe_print(f'{RED}Navigation is not ready.{RESET}')
                 return
 
             goal_msg = NavigateToPose.Goal()
@@ -308,7 +308,7 @@ class CombinedAutoRecharger(Node):
                 time.sleep(0.1)
             goal_handle = send_goal_future.result()
             if not goal_handle or not goal_handle.accepted:
-                safe_print(f'{RED}Navigation goal rejected{RESET}')
+                safe_print(f'{RED}Navigation request was not accepted. Press P to retry.{RESET}')
                 return
 
             result_future = goal_handle.get_result_async()
@@ -319,10 +319,15 @@ class CombinedAutoRecharger(Node):
             if status == 4:
                 safe_print(f'{GREEN}Navigation succeeded! Starting serial docking...{RESET}')
                 self.start_serial_docking()
+            elif status == 6:
+                safe_print(f'{RED}Navigation could not be completed. Check for obstacles '
+                           f'along the route and around the charging station, then press P to retry.{RESET}')
+            elif status == 5:
+                safe_print(f'{YELLOW}Navigation was canceled. Press P to restart charging.{RESET}')
             else:
                 safe_print(f'{RED}Navigation failed (status={status}){RESET}')
         except Exception as e:
-            safe_print(f'{RED}Navigation error: {e}{RESET}')
+            safe_print(f'{RED}Navigation encountered an error: {e}{RESET}')
         finally:
             self.navigation_active = False
 
@@ -349,14 +354,14 @@ class CombinedAutoRecharger(Node):
             while self.serial_control_active:
                 if time.time() - docking_start >= DOCKING_TOTAL_TIMEOUT:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{RED}Docking exceeded {DOCKING_TOTAL_TIMEOUT:.0f}s '
-                               f'without completing - stopped{RESET}')
+                    safe_print(f'{RED}Docking timed out after {DOCKING_TOTAL_TIMEOUT:.0f} seconds. '
+                               f'Please check the charging area and device.{RESET}')
                     break
 
                 if time.time() - last_progress >= DOCKING_STALL_TIMEOUT:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{RED}No guidance change for {DOCKING_STALL_TIMEOUT:.0f}s '
-                               f'(mode 0x{(prev_mode or 0):02X}) - stopped{RESET}')
+                    safe_print(f'{RED}Docking stopped after {DOCKING_STALL_TIMEOUT:.0f} seconds '
+                               f'without new charger guidance. Please check the charging device.{RESET}')
                     break
 
                 frame = self.parser.read_frame(min(2.0, self.charge_frame_timeout))
@@ -436,7 +441,8 @@ class CombinedAutoRecharger(Node):
                     total_elapsed = now - pressure_total_start
                     if total_elapsed >= PRESSURE_RETRY_TIMEOUT:
                         self.cmd_vel_pub.publish(self.make_twist_stamped())
-                        safe_print(f'{RED}Pressure retry timeout - stopped{RESET}')
+                        safe_print(f'{RED}Charging could not be confirmed. Check the charging '
+                                   f'contacts and alignment, then press P to retry.{RESET}')
                         break
                     pull_duration = 1.0 if total_elapsed >= 5.0 else 0.5
                     elapsed = now - pressure_start
@@ -462,7 +468,8 @@ class CombinedAutoRecharger(Node):
                         last_mode = mode
 
         except Exception as e:
-            safe_print(f'{RED}Serial docking error: {e}{RESET}')
+            safe_print(f'{RED}Docking encountered an error. Please check the charging '
+                       f'device connection. Details: {e}{RESET}')
             self.cmd_vel_pub.publish(self.make_twist_stamped())
         finally:
             if self.parser:
