@@ -6,6 +6,7 @@ import math
 import time
 import select
 import threading
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -21,13 +22,27 @@ from .wit_usb2can import SerialCANParser
 
 if os.name != 'nt':
     import termios
-    import tty
 
 _pkg_dir = get_package_share_directory('myagv_plus_autocharge')
 CONFIG_DIR = os.path.abspath(os.path.join(
     _pkg_dir, '..', '..', '..', '..', 'src', 'myagv_plus_autocharge', 'config'))
 JSON_FILE = os.path.join(CONFIG_DIR, 'charger_position.json')
 YAML_FILE = os.path.join(CONFIG_DIR, 'nav_goal_params.yaml')
+
+DOCKING_STALL_TIMEOUT = 60.0
+DOCKING_TOTAL_TIMEOUT = 180.0
+STATUS_PRINT_INTERVAL = 0.5
+DOCKING_REVERSE_SPEED_LIMIT = 0.10
+DOCKING_CONTACT_REVERSE_SPEED_LIMIT = 0.05
+DOCKING_TURN_SPEED_LIMIT = 0.10
+PRESSURE_RETRY_TIMEOUT = 60.0
+
+MODE_NAMES = {
+    0x01: 'normal',
+    0xAA: 'charging_zone',
+    0xBB: 'pressure_zone',
+    0xCF: 'emergency_stop',
+}
 
 GREEN = '\033[1;32m'
 RED = '\033[1;31m'
@@ -37,28 +52,48 @@ RESET = '\033[0m'
 
 settings = None
 if os.name != 'nt' and sys.stdin.isatty():
-    settings = list(termios.tcgetattr(sys.stdin))
+    settings = termios.tcgetattr(sys.stdin)
+    raw_settings = termios.tcgetattr(sys.stdin)
+    raw_settings[3] &= ~(termios.ICANON | termios.ECHO | termios.ISIG)
+    raw_settings[6][termios.VMIN] = 1
+    raw_settings[6][termios.VTIME] = 0
+    termios.tcsetattr(sys.stdin, termios.TCSANOW, raw_settings)
+
+
+def restore_terminal():
+    if sys.stdin.isatty() and settings:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+
+
+_stdin_fd = sys.stdin.fileno() if os.name != 'nt' else None
 
 
 def get_key():
     if os.name == 'nt':
         import msvcrt
         return msvcrt.getch().decode('utf-8')
-    if sys.stdin.isatty():
-        tty.setraw(sys.stdin.fileno())
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
-    key = ''
+    rlist, _, _ = select.select([_stdin_fd], [], [], 0.1)
     if rlist:
-        key = sys.stdin.read(1)
-    if sys.stdin.isatty() and settings:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-    return key
+        return os.read(_stdin_fd, 1).decode('utf-8', 'ignore')
+    return ''
 
 
 def safe_print(text):
-    if sys.stdin.isatty() and settings:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
     print(text)
+
+
+def mode_name(mode):
+    return MODE_NAMES.get(mode, f'unknown_0x{mode:02X}')
+
+
+def format_frame_status(frame):
+    bits = frame['infrared_bits']
+    ir_seen = any(bits[2:6])
+    ir_tag = (f'{GREEN}IR detected    {RESET}' if ir_seen
+              else f'{RED}IR not detected{RESET}')
+    return (f"{ir_tag} | mode: {mode_name(frame['mode']):<14} | "
+            f"speed x={frame['x_speed']:+.3f} z={frame['z_speed']:+.3f} | "
+            f"current {frame['actual_current']:.0f} mA")
 
 
 class CombinedAutoRecharger(Node):
@@ -68,7 +103,16 @@ class CombinedAutoRecharger(Node):
         self.navigation_active = False
         self.serial_control_active = False
         self.parser = None
-        self.charge_current_threshold = 200.0
+        self.charge_current_threshold = 600.0
+        self.charge_confirm_duration = float(
+            self.declare_parameter('charge_confirm_duration_sec', 1.0).value)
+        self.charge_frame_timeout = float(
+            self.declare_parameter('charge_frame_timeout_sec', 0.5).value)
+        for name, value in (
+                ('charge_confirm_duration_sec', self.charge_confirm_duration),
+                ('charge_frame_timeout_sec', self.charge_frame_timeout)):
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f'{name} must be finite and greater than zero')
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -87,6 +131,15 @@ class CombinedAutoRecharger(Node):
 
         self.marker_timer = self.create_timer(2.0, self.publish_marker)
         self.publish_marker()
+
+    def resolve_can_port(self):
+        esp32_device = '/dev/myagvplus_esp32'
+        esp32 = Path(esp32_device).resolve().name
+        port = '/dev/ttyCH341USB0' if esp32 == 'ttyCH341USB1' else '/dev/ttyCH341USB1'
+        if esp32 not in ('ttyCH341USB0', 'ttyCH341USB1'):
+            port = '/dev/ttyCH341USB0'
+        safe_print(f'USB-CAN serial port {port}.')
+        return port
 
     def make_twist_stamped(self, linear_x=0.0, angular_z=0.0):
         msg = TwistStamped()
@@ -141,7 +194,7 @@ class CombinedAutoRecharger(Node):
             time.sleep(dt)
 
         if not xs:
-            safe_print(f'{RED}Failed to sample pose. Is AMCL running?{RESET}')
+            safe_print(f'{RED}Unable to save the charging point. Please check localization.{RESET}')
             return
 
         xs.sort(); ys.sort(); zs.sort(); ws.sort()
@@ -245,7 +298,7 @@ class CombinedAutoRecharger(Node):
             goal_pose.pose.orientation.w = goal_qw
 
             if not self.nav_client.wait_for_server(timeout_sec=5.0):
-                safe_print(f'{RED}NavigateToPose action server not available{RESET}')
+                safe_print(f'{RED}Navigation is not ready.{RESET}')
                 return
 
             goal_msg = NavigateToPose.Goal()
@@ -255,7 +308,7 @@ class CombinedAutoRecharger(Node):
                 time.sleep(0.1)
             goal_handle = send_goal_future.result()
             if not goal_handle or not goal_handle.accepted:
-                safe_print(f'{RED}Navigation goal rejected{RESET}')
+                safe_print(f'{RED}Navigation request was not accepted. Press P to retry.{RESET}')
                 return
 
             result_future = goal_handle.get_result_async()
@@ -266,17 +319,22 @@ class CombinedAutoRecharger(Node):
             if status == 4:
                 safe_print(f'{GREEN}Navigation succeeded! Starting serial docking...{RESET}')
                 self.start_serial_docking()
+            elif status == 6:
+                safe_print(f'{RED}Navigation could not be completed. Check for obstacles '
+                           f'along the route and around the charging station, then press P to retry.{RESET}')
+            elif status == 5:
+                safe_print(f'{YELLOW}Navigation was canceled. Press P to restart charging.{RESET}')
             else:
                 safe_print(f'{RED}Navigation failed (status={status}){RESET}')
         except Exception as e:
-            safe_print(f'{RED}Navigation error: {e}{RESET}')
+            safe_print(f'{RED}Navigation encountered an error: {e}{RESET}')
         finally:
             self.navigation_active = False
 
     def start_serial_docking(self):
         self.serial_control_active = True
         try:
-            self.parser = SerialCANParser('/dev/ttyCH341USB1', 9600, 1, debug=False)
+            self.parser = SerialCANParser(self.resolve_can_port(), 9600, 1, debug=False)
             self.parser.open_serial()
             self.parser.send_at_commands(["AT+CG", "AT+AT"])
 
@@ -284,30 +342,88 @@ class CombinedAutoRecharger(Node):
             last_mode = None
             pressure_total_start = None
             docking_phase_printed = 0
+            prev_mode = None
+            prev_progress_key = None
+            docking_start = time.time()
+            last_progress = time.time()
+            last_status_key = None
+            last_status_print = 0.0
+            charge_confirm_start = None
+            last_frame_time = None
 
             while self.serial_control_active:
-                frame = self.parser.read_frame(2.0)
+                if time.time() - docking_start >= DOCKING_TOTAL_TIMEOUT:
+                    self.cmd_vel_pub.publish(self.make_twist_stamped())
+                    safe_print(f'{RED}Docking timed out after {DOCKING_TOTAL_TIMEOUT:.0f} seconds. '
+                               f'Please check the charging area and device.{RESET}')
+                    break
+
+                if time.time() - last_progress >= DOCKING_STALL_TIMEOUT:
+                    self.cmd_vel_pub.publish(self.make_twist_stamped())
+                    safe_print(f'{RED}Docking stopped after {DOCKING_STALL_TIMEOUT:.0f} seconds '
+                               f'without new charger guidance. Please check the charging device.{RESET}')
+                    break
+
+                frame = self.parser.read_frame(min(2.0, self.charge_frame_timeout))
                 if frame is None:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
+                    charge_confirm_start = None
+                    last_frame_time = None
                     continue
 
+                frame_time = time.monotonic()
+                if last_frame_time is not None and \
+                        frame_time - last_frame_time > self.charge_frame_timeout:
+                    charge_confirm_start = None
+                last_frame_time = frame_time
                 mode = frame['mode']
                 bits = frame['infrared_bits']
 
+                prev_mode = mode
+                progress_key = (mode,
+                                round(frame['x_speed'], 3),
+                                round(frame['z_speed'], 3),
+                                tuple(bits))
+                if progress_key != prev_progress_key:
+                    prev_progress_key = progress_key
+                    last_progress = time.time()
+
+                now_ts = time.time()
+                status_key = (mode, tuple(bits))
+                if status_key != last_status_key or \
+                        now_ts - last_status_print >= STATUS_PRINT_INTERVAL:
+                    safe_print(format_frame_status(frame))
+                    last_status_key = status_key
+                    last_status_print = now_ts
+
                 if frame['actual_current'] >= self.charge_current_threshold:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{GREEN}Charging current detected: '
-                               f'{frame["actual_current"]:.1f} mA - docking complete{RESET}')
-                    break
+                    last_mode = None
+                    if charge_confirm_start is None:
+                        charge_confirm_start = frame_time
+                    elif frame_time - charge_confirm_start >= self.charge_confirm_duration:
+                        safe_print(f'{GREEN}Charging current detected: '
+                                   f'{frame["actual_current"]:.1f} mA - docking complete{RESET}')
+                        break
+                    continue
+
+                charge_confirm_start = None
 
                 if bits[7] != 0:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{YELLOW}Charging flag - stopped{RESET}')
-                    break
+                    if last_mode != 'charging_flag':
+                        safe_print(f'{YELLOW}Charging flag - stopped{RESET}')
+                    last_mode = 'charging_flag'
+                    continue
 
                 if mode == 0x01:
+                    reverse_limit = (DOCKING_CONTACT_REVERSE_SPEED_LIMIT if pressure_total_start
+                                     else DOCKING_REVERSE_SPEED_LIMIT)
+                    linear_x = max(frame['x_speed'], -reverse_limit)
+                    angular_z = max(-DOCKING_TURN_SPEED_LIMIT,
+                                    min(frame['z_speed'], DOCKING_TURN_SPEED_LIMIT))
                     self.cmd_vel_pub.publish(
-                        self.make_twist_stamped(frame['x_speed'], frame['z_speed']))
+                        self.make_twist_stamped(linear_x, angular_z))
                     if last_mode != 0x01:
                         phase = 2 if pressure_total_start and time.time() - pressure_total_start >= 5.0 else 1
                         if docking_phase_printed < phase:
@@ -323,9 +439,10 @@ class CombinedAutoRecharger(Node):
                         last_mode = 0xBB
                         pressure_start = now
                     total_elapsed = now - pressure_total_start
-                    if total_elapsed >= 10.0:
+                    if total_elapsed >= PRESSURE_RETRY_TIMEOUT:
                         self.cmd_vel_pub.publish(self.make_twist_stamped())
-                        safe_print(f'{RED}Pressure retry timeout - stopped{RESET}')
+                        safe_print(f'{RED}Charging could not be confirmed. Check the charging '
+                                   f'contacts and alignment, then press P to retry.{RESET}')
                         break
                     pull_duration = 1.0 if total_elapsed >= 5.0 else 0.5
                     elapsed = now - pressure_start
@@ -337,15 +454,22 @@ class CombinedAutoRecharger(Node):
                         last_mode = None
                 elif mode == 0xAA:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
-                    safe_print(f'{GREEN}Charging zone reached - docking complete{RESET}')
-                    break
+                    if last_mode != 0xAA:
+                        safe_print(f'{YELLOW}Charging zone reached - waiting for charging current{RESET}')
+                        last_mode = 0xAA
                 elif mode == 0xCF:
                     self.cmd_vel_pub.publish(self.make_twist_stamped())
                     safe_print(f'{RED}Emergency stop{RESET}')
                     break
+                else:
+                    self.cmd_vel_pub.publish(self.make_twist_stamped())
+                    if last_mode != mode:
+                        safe_print(f'{YELLOW}Unhandled mode 0x{mode:02X} - holding{RESET}')
+                        last_mode = mode
 
         except Exception as e:
-            safe_print(f'{RED}Serial docking error: {e}{RESET}')
+            safe_print(f'{RED}Docking encountered an error. Please check the charging '
+                       f'device connection. Details: {e}{RESET}')
             self.cmd_vel_pub.publish(self.make_twist_stamped())
         finally:
             if self.parser:
@@ -357,7 +481,6 @@ class CombinedAutoRecharger(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = CombinedAutoRecharger()
-
     spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     spin_thread.start()
 
@@ -379,7 +502,11 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.cmd_vel_pub.publish(node.make_twist_stamped())
+        node.serial_control_active = False
+        for _ in range(3):
+            node.cmd_vel_pub.publish(node.make_twist_stamped())
+            time.sleep(0.05)
+        restore_terminal()
         node.destroy_node()
         rclpy.shutdown()
         safe_print('Exited.')

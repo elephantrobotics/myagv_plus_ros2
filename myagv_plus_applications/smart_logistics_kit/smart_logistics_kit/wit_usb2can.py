@@ -31,7 +31,7 @@ class SerialCANParser:
         self.timeout = timeout  # 超时设置
         self.ser = None  # 串口对象
         self.buffer = bytearray()  # 存储当前读取的字节
-        self.max_retries = 3  # 最大重试次数
+        self.at_retry_timeout = 30.0  # AT 握手重试总时长（秒）
         self.debug = debug
 
         # 存储实时数据
@@ -255,9 +255,13 @@ class SerialCANParser:
     def send_at_commands(self, commands):
         """发送 AT 命令并等待响应"""
         for command in commands:
-            retries = 0
-            while retries < self.max_retries:
+            deadline = time.monotonic() + self.at_retry_timeout
+            attempts = 0
+            acknowledged = False
+
+            while time.monotonic() < deadline:
                 self.ser.write(command.encode() + b'\r\n')
+                attempts += 1
                 print(f"发送命令: {command}")
 
                 # 等待响应并读取数据
@@ -266,13 +270,15 @@ class SerialCANParser:
                 # 检查响应是否包含 "OK"
                 if b"OK" in response:
                     print(f"收到响应: {response}")
-                    break  # 如果收到 OK，退出重试循环
-                else:
-                    retries += 1
-                    print(f"未收到预期的响应，收到: {response}")
+                    acknowledged = True
+                    break
 
-            if retries == self.max_retries:
-                raise RuntimeError(f"重试 {self.max_retries} 次后仍未收到有效响应，请检查设备。")
+                print(f"未收到预期的响应，收到: {response}")
+
+            if not acknowledged:
+                raise RuntimeError(
+                    f"重试 {self.at_retry_timeout:.0f} 秒（共 {attempts} 次）"
+                    f"后仍未收到有效响应，请检查设备。")
 
     def start(self):
         """开始读取和处理数据"""

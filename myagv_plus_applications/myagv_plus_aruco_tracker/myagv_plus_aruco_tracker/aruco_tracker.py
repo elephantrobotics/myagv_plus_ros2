@@ -12,7 +12,13 @@ from geometry_msgs.msg import TransformStamped
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo
 from sensor_msgs.msg import Image
@@ -37,11 +43,15 @@ class ArUcoTracker(Node):
             qos_profile_sensor_data
         )
 
+        image_qos = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self.sub_camera_image = self.create_subscription(
             Image,
             '/camera/image_raw',
             self.image_callback,
-            qos_profile_sensor_data
+            image_qos
         )
 
         detect_qos = QoSProfile(depth=1)
@@ -110,9 +120,9 @@ class ArUcoTracker(Node):
 
         cv_image = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
         cv_gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        self.tracking_markers(cv_gray, img_msg.header.stamp, cv_image)
+        self.tracking_markers(cv_gray, cv_image)
 
-    def tracking_markers(self, cv_gray, stamp, cv_image=None):
+    def tracking_markers(self, cv_gray, cv_image=None):
         corners, marker_ids, _ = cv2.aruco.detectMarkers(
             cv_gray, self.marker_dict, parameters=self.ar_param
         )
@@ -138,6 +148,7 @@ class ArUcoTracker(Node):
             corners, self.marker_size, self.intrinsic_mat, self.distortion
         )
         R_corr = Rotation.from_euler('xyz', [-np.pi/2, 0, -np.pi/2]).as_matrix()
+        transform_stamp = self.get_clock().now().to_msg()
 
         for i, marker_id in enumerate(marker_ids.flatten()):
             tvec = tvecs[i][0]
@@ -149,7 +160,10 @@ class ArUcoTracker(Node):
             quat = Rotation.from_matrix(R_corrected).as_quat()
 
             t_msg = TransformStamped()
-            t_msg.header.stamp = stamp
+            # Parking evaluates freshness when detection finishes; using the
+            # capture stamp makes a newly published transform look stale after
+            # transport and image-processing latency.
+            t_msg.header.stamp = transform_stamp
             t_msg.header.frame_id = 'camera_link'
             t_msg.child_frame_id = f'ar_marker_{marker_id}'
             t_msg.transform.translation.x = float(t_corrected[0])
